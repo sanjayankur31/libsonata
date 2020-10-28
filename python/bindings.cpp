@@ -217,7 +217,7 @@ py::class_<Population, std::shared_ptr<Population>> bindPopulationClass(py::modu
             "name"_a,
             "selection"_a,
             "default_value"_a,
-            imbueElementName(DOC_POP(getAttribute_2)).c_str())
+            imbueElementName(DOC_POP(getAttribute)).c_str())
         .def_property_readonly("dynamics_attribute_names",
                                &Population::dynamicsAttributeNames,
                                DOC_POP(dynamicsAttributeNames))
@@ -259,7 +259,7 @@ py::class_<Population, std::shared_ptr<Population>> bindPopulationClass(py::modu
             "name"_a,
             "selection"_a,
             "default_value"_a,
-            imbueElementName(DOC_POP(getDynamicsAttribute_2)).c_str())
+            imbueElementName(DOC_POP(getDynamicsAttribute)).c_str())
         .def(
             "get_enumeration",
             [](Population& obj, const std::string& name, Selection::Value elemID) {

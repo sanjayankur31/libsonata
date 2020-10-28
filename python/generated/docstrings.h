@@ -1,6 +1,6 @@
 /*
-  This file contains docstrings for the Python bindings.
-  Do not edit! These were automatically extracted by mkdoc.py
+  This file contains docstrings for use in the Python bindings.
+  Do not edit! They were automatically extracted by pybind11_mkdoc.
  */
 
 #define __EXPAND(x)                                      x
@@ -287,8 +287,6 @@ static const char *__doc_bbp_sonata_ReportReader_Population_nodes_pointers = R"d
 static const char *__doc_bbp_sonata_ReportReader_Population_pop_group = R"doc()doc";
 
 static const char *__doc_bbp_sonata_ReportReader_Population_time_units = R"doc()doc";
-
-static const char *__doc_bbp_sonata_ReportReader_Population_times_index = R"doc()doc";
 
 static const char *__doc_bbp_sonata_ReportReader_Population_tstart = R"doc()doc";
 
