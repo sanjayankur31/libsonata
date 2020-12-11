@@ -21,19 +21,27 @@ if [[ -z $LIBCLANG_PATH ]]; then
     exit -1
 fi
 
-VERSION=14c7d7002c71aba0623bee07f3258c2453f06262
-PACKAGE=git+git://github.com/pybind/pybind11_mkdoc.git@$VERSION
+#VERSION=14c7d7002c71aba0623bee07f3258c2453f06262
+#PACKAGE=git+git://github.com/pybind/pybind11_mkdoc.git@$VERSION
+
+VERSION=0938515e0d4f9a5c2c5949dc46462175f54d6ea4
+PACKAGE=git+git://github.com/mgeplf/pybind11_mkdoc.git@$VERSION
 
 VENV=build/venv-docstrings
 if [[ ! -d $VENV ]]; then
     python3 -mvenv "$VENV"
     $VENV/bin/pip install -U pip setuptools wheel
+    $VENV/bin/pip install 'clang==9'  # keep in sync w/ .github/workflows/docstring_check.yaml
     $VENV/bin/python -m pip install $PACKAGE
 fi
 
+DOCSTRING_PATH=./python/generated/docstrings.h
+
+rm -f $DOCSTRING_PATH
+
 $VENV/bin/python -m pybind11_mkdoc \
-  -o ./python/generated/docstrings.h \
-  ./include/bbp/sonata/*.h \
+  -o $DOCSTRING_PATH \
+  ./include/bbp/sonata/report_reader.h \
   -Wno-pragma-once-outside-header \
   -ferror-limit=100000 \
   -I/usr/include/hdf5/serial \
@@ -41,4 +49,4 @@ $VENV/bin/python -m pybind11_mkdoc \
   -I./include
 
 # fail if there are diffs in the generated docstrings
-git diff --exit-code -- ./python/generated/docstrings.h
+git diff --exit-code -- $DOCSTRING_PATH
