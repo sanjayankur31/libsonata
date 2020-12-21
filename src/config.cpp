@@ -11,6 +11,7 @@
 
 #include <bbp/sonata/config.h>
 
+#include <cassert>
 #include <fstream>
 #include <memory>
 #include <regex>
@@ -63,11 +64,12 @@ class PathResolver
 
 
 std::map<std::string, std::string> _replaceVariables(std::map<std::string, std::string> variables) {
+    constexpr size_t maxIterations = 10;
+
     bool anyChange = true;
-    constexpr size_t maxIterations = 5;
     size_t iteration = 0;
 
-    while (anyChange && iteration++ < maxIterations) {
+    while (anyChange && iteration < maxIterations) {
         anyChange = false;
         auto variablesCopy = variables;
 
@@ -85,7 +87,7 @@ std::map<std::string, std::string> _replaceVariables(std::map<std::string, std::
                 }
             }
         }
-
+        ++iteration;
         variables = variablesCopy;
     }
 
@@ -176,12 +178,10 @@ std::map<std::string, std::string> _readVariables(const nlohmann::json& json) {
         const auto name = it.key();
 
         if (std::regex_match(name, regexVariable)) {
-            if (variables.find(name) != variables.end())
-                throw std::runtime_error("Duplicate variable `" + name + "`");
-
+            assert(variables.find(name) == variables.end());
             variables[name] = it.value();
         } else {
-            throw std::runtime_error("Invalid variable name `" + name + "`");
+            throw SonataError(fmt::format("Invalid variable `{}`", name));
         }
     }
 
@@ -206,10 +206,14 @@ struct CircuitConfig::Impl {
     Impl(const std::string& contents, const std::string& basePath)
         : resolver(basePath) {
         const auto json = parseSonataJson(contents);
+
         try {
             target_simulator = json.at("target_simulator");
         } catch (nlohmann::detail::out_of_range&) {
         }
+
+        if (json.find("networks") == json.end())
+            throw SonataError("Error parsing config: `networks` not specified");
 
         auto networks = json.at("networks");
         component_dirs = _fillComponents(json, resolver);
@@ -277,15 +281,10 @@ struct SimulationConfig::Impl {
         : _resolver(basePath) {
         const auto json = parseSonataJson(contents);
 
-        try {
-            networkConfig = _resolver.toAbsolute(json.at("network"));
-        } catch (nlohmann::detail::exception& e) {
-            // Check if this configuration is a circuit configuration as well.
-            // Otherwise report an error about the missing network field.
-            if (json.find("networks") == json.end())
-                throw std::runtime_error("Error parsing simulation config: network not specified");
-            networkConfig = "ADSFASDFASDF";  // XXX: what to put here?
-        }
+        if (json.find("network") == json.end())
+            throw SonataError("Error parsing simulation config: network not specified");
+
+        networkConfig = _resolver.toAbsolute(json.at("network"));
 
         if (json.find("node_sets_file") != json.end())
             nodeSets = _resolver.toAbsolute(json["node_sets_file"]);
@@ -325,8 +324,7 @@ struct SimulationConfig::Impl {
                 }
             }
         } catch (nlohmann::detail::exception& e) {
-            throw std::runtime_error(
-                (std::string("Error parsing simulation config: ") + e.what()).c_str());
+            throw SonataError(fmt::format("Error parsing simulation config: {}", e.what()));
         }
     }
 
