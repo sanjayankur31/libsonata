@@ -32,16 +32,19 @@ class SONATA_API CircuitConfig
         std::string types;
     };
 
-    /** Open given filepath to a circuit file for reading.
+    /** Load SONATA circuit config JSON
      *
-     * @param std::string filepath to circuit file
+     * @param std::string contents of a circuit config JSON file
      * @throw std::runtime_error if file is not found or invalid
      */
-    CircuitConfig(const std::string&);
+    CircuitConfig(const std::string& contents);
 
     CircuitConfig(CircuitConfig&&);
     CircuitConfig(const CircuitConfig& other) = delete;
     ~CircuitConfig();
+
+    /** Open a SONATA circuit config from a path to JSON */
+    static CircuitConfig fromFile(const std::string& path);
 
     /** Return the target simulator */
     std::string getTargetSimulator() const;
@@ -70,15 +73,18 @@ class SONATA_API CircuitConfig
 class SONATA_API SimulationConfig
 {
   public:
-    /** Open a SONATA simulation config json */
-    SimulationConfig(const std::string&);
+    /** Open a SONATA simulation config JSON */
+    SimulationConfig(const std::string& contents);
 
     SimulationConfig(SimulationConfig&&);
     SimulationConfig& operator=(SimulationConfig&&);
 
     ~SimulationConfig();
 
-    /** @return the path to the circuit configuration json. */
+    /** Open a SONATA simulation config from a path to JSON */
+    static SimulationConfig fromFile(const std::string& path);
+
+    /** @return the path to the circuit configuration JSON. */
     std::string getNetworkConfig() const;
 
     /** @return the path to the node set file. */

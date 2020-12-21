@@ -14,19 +14,36 @@
 #include <fstream>
 #include <memory>
 #include <regex>
-#include <streambuf>
 #include <string>
 
 #include <ghc/filesystem.hpp>  // for ghc::filesystem
 #include <json.hpp>
 
-
+#include <iostream>
 namespace {
+std::string readFile(const std::string& path) {
+    std::ifstream file(path);
+
+    if (file.fail())
+        throw std::runtime_error("Could not open file `" + path + "`");
+
+    std::string contents;
+
+    file.seekg(0, std::ios::end);
+    contents.reserve(file.tellg());
+    file.seekg(0, std::ios::beg);
+
+    contents.assign((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+
+    return contents;
+}
+
 nlohmann::json _parseCircuitJson(const std::string& jsonStr) {
     using nlohmann::json;
 
     const auto jsonOrig = json::parse(jsonStr);
     auto jsonFlat = jsonOrig.flatten();
+
     auto manifest = jsonOrig["manifest"];
 
     std::map<std::string, std::string> variables;
@@ -46,7 +63,6 @@ nlohmann::json _parseCircuitJson(const std::string& jsonStr) {
             throw std::runtime_error("Invalid variable name `" + name + "`");
         }
     }
-
     {  // Expand variables dependent on other variables
         bool anyChange = true;
         constexpr size_t max_iterations = 5;
@@ -72,7 +88,7 @@ nlohmann::json _parseCircuitJson(const std::string& jsonStr) {
             }
 
             variables = variablesCopy;
-            iteration++;
+            ++iteration;
         }
 
         if (iteration == max_iterations)
@@ -105,7 +121,7 @@ nlohmann::json _parseCircuitJson(const std::string& jsonStr) {
 }
 
 std::map<std::string, std::string> _fillComponents(const nlohmann::json& json) {
-    const auto comps = json["components_dir"];
+    const auto comps = json["components"];
     std::map<std::string, std::string> output;
 
     for (auto it = comps.begin(); it != comps.end(); ++it)
@@ -115,10 +131,9 @@ std::map<std::string, std::string> _fillComponents(const nlohmann::json& json) {
 }
 
 std::vector<bbp::sonata::CircuitConfig::SubnetworkFiles> _fillSubnetwork(
-    const nlohmann::json& json,
-    const std::string& network_type,
-    const std::string& element_name,
-    const std::string& type_name) {
+    const nlohmann::json& json, const std::string& network_type, const std::string& element_name
+    /*const std::string& type_name */
+) {
     std::vector<bbp::sonata::CircuitConfig::SubnetworkFiles> output;
 
     const auto nodes = json["networks"][network_type];
@@ -126,7 +141,7 @@ std::vector<bbp::sonata::CircuitConfig::SubnetworkFiles> _fillSubnetwork(
     for (const auto& node : nodes) {
         bbp::sonata::CircuitConfig::SubnetworkFiles network;
         network.elements = node[element_name];
-        network.types = node[type_name];
+        // network.types = node[type_name];
         output.push_back(network);
     }
 
@@ -139,25 +154,12 @@ namespace bbp {
 namespace sonata {
 
 struct CircuitConfig::Impl {
-    Impl(const std::string& path) {
-        std::ifstream file(path);
-
-        if (file.fail())
-            throw std::runtime_error("Could not open file `" + path + "`");
-
-        std::string contents;
-
-        file.seekg(0, std::ios::end);
-        contents.reserve(file.tellg());
-        file.seekg(0, std::ios::beg);
-
-        contents.assign((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-
+    Impl(const std::string& contents) {
         const auto json = _parseCircuitJson(contents);
         target_simulator = json["target_simulator"];
         component_dirs = _fillComponents(json);
-        networkEdges = _fillSubnetwork(json, "edges", "edges_file", "edge_types_file");
-        networkNodes = _fillSubnetwork(json, "nodes", "nodes_file", "node_types_file");
+        networkNodes = _fillSubnetwork(json, "nodes", "nodes_file" /*, "node_types_file"*/);
+        networkEdges = _fillSubnetwork(json, "edges", "edges_file" /*, "edge_types_file"*/);
     }
 
     std::string target_simulator;
@@ -171,6 +173,11 @@ CircuitConfig::CircuitConfig(const std::string& path)
 
 CircuitConfig::CircuitConfig(CircuitConfig&&) = default;
 CircuitConfig::~CircuitConfig() = default;
+
+CircuitConfig CircuitConfig::fromFile(const std::string& path) {
+    std::string contents = readFile(path);
+    return CircuitConfig(contents);
+}
 
 std::string CircuitConfig::getTargetSimulator() const {
     return impl->target_simulator;
@@ -287,24 +294,19 @@ nlohmann::json _expandVariables(const nlohmann::json& json,
     return jsonFlat.unflatten();
 }
 
-nlohmann::json parseSonataJson(const std::string& uri) {
-    // Reading the input file into a string
-    std::ifstream file(uri);
-    if (file.fail())
-        throw std::runtime_error("Could not open file `" + uri + "`");
-
-    // Parsing
-    const auto json = nlohmann::json::parse(file);
+nlohmann::json parseSonataJson(const std::string& contents) {
+    const auto json = nlohmann::json::parse(contents);
 
     // Parsing manifest and expanding all variables
     const auto vars = _replaceVariables(_readVariables(json));
     return _expandVariables(json, vars);
 }
+
 class PathResolver
 {
   public:
     PathResolver(const std::string& basePath)
-        : _basePath(fs::path(basePath).parent_path()) {}
+        : _basePath(fs::path(basePath)) {}
 
     std::string toAbsolute(const std::string& path) const;
 
@@ -331,9 +333,9 @@ struct SimulationConfig::Impl {
     std::string spikesFile;
     std::map<std::string, std::string> reportFilepaths;
 
-    Impl(const std::string& path)
-        : _resolver(path) {
-        const auto json = parseSonataJson(path);
+    Impl(const std::string& contents, const std::string& basePath)
+        : _resolver(basePath) {
+        const auto json = parseSonataJson(contents);
 
         try {
             networkConfig = _resolver.toAbsolute(json.at("network"));
@@ -342,7 +344,7 @@ struct SimulationConfig::Impl {
             // Otherwise report an error about the missing network field.
             if (json.find("networks") == json.end())
                 throw std::runtime_error("Error parsing simulation config: network not specified");
-            networkConfig = path;
+            networkConfig = "ADSFASDFASDF";  // XXX: what to put here?
         }
 
         if (json.find("node_sets_file") != json.end())
@@ -393,11 +395,16 @@ struct SimulationConfig::Impl {
 };
 
 SimulationConfig::SimulationConfig(const std::string& source)
-    : _impl(new SimulationConfig::Impl(source)) {}
+    : _impl(new SimulationConfig::Impl(source, ".")) {}
 
 SimulationConfig::SimulationConfig(SimulationConfig&&) = default;
 SimulationConfig& SimulationConfig::operator=(SimulationConfig&&) = default;
 SimulationConfig::~SimulationConfig() = default;
+
+SimulationConfig SimulationConfig::fromFile(const std::string& path) {
+    std::string contents = readFile(path);
+    return SimulationConfig(contents);
+}
 
 std::string SimulationConfig::getNetworkConfig() const {
     return _impl->networkConfig;
