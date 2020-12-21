@@ -37,7 +37,7 @@ class SONATA_API CircuitConfig
      * @param std::string contents of a circuit config JSON file
      * @throw std::runtime_error if file is not found or invalid
      */
-    CircuitConfig(const std::string& contents);
+    CircuitConfig(const std::string& contents, const std::string& basePath);
 
     CircuitConfig(CircuitConfig&&);
     CircuitConfig(const CircuitConfig& other) = delete;
@@ -74,7 +74,7 @@ class SONATA_API SimulationConfig
 {
   public:
     /** Open a SONATA simulation config JSON */
-    SimulationConfig(const std::string& contents);
+    SimulationConfig(const std::string& contents, const std::string& basePath);
 
     SimulationConfig(SimulationConfig&&);
     SimulationConfig& operator=(SimulationConfig&&);
