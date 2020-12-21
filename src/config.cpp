@@ -21,8 +21,6 @@
 #include <ghc/filesystem.hpp>
 #include <json.hpp>
 
-#include <iostream>  //XXX: debug
-
 namespace {
 using bbp::sonata::SonataError;
 
@@ -106,11 +104,11 @@ nlohmann::json _expandVariables(const nlohmann::json& json,
 
     // Expand variables in whole json
     for (auto it = jsonFlat.begin(); it != jsonFlat.end(); ++it) {
-        if (!it.value().is_string())
+        auto& value = it.value();
+        if (!value.is_string())
             continue;
 
-        auto valueStr = it.value().get<std::string>();
-        auto& value = it.value();
+        auto valueStr = value.get<std::string>();
 
         for (auto& var : vars) {
             auto& varName = var.first;
@@ -163,15 +161,14 @@ std::vector<CircuitConfig::SubnetworkFiles> _fillSubnetwork(nlohmann::json::refe
     return output;
 }
 
-namespace fs = ghc::filesystem;
-const std::string _defaultSpikesFileName("spikes.h5");
+const char* _defaultSpikesFileName = "spikes.h5";
 
 std::map<std::string, std::string> _readVariables(const nlohmann::json& json) {
     auto manifest = json["manifest"];
 
     std::map<std::string, std::string> variables;
 
-    const std::regex regexVariable("\\$[a-zA-Z0-9_]*");
+    const std::regex regexVariable(R"(\$[a-zA-Z0-9_]*)");
 
     // Find variables in manifest section
     for (auto it = manifest.begin(); it != manifest.end(); ++it) {
@@ -191,7 +188,6 @@ std::map<std::string, std::string> _readVariables(const nlohmann::json& json) {
 nlohmann::json parseSonataJson(const std::string& contents) {
     const auto json = nlohmann::json::parse(contents);
 
-    // Parsing manifest and expanding all variables
     const auto vars = _replaceVariables(_readVariables(json));
     return _expandVariables(json, vars);
 }
@@ -203,6 +199,12 @@ namespace bbp {
 namespace sonata {
 
 struct CircuitConfig::Impl {
+    std::string target_simulator;
+    std::map<std::string, std::string> component_dirs;
+    std::vector<CircuitConfig::SubnetworkFiles> networkNodes;
+    std::vector<CircuitConfig::SubnetworkFiles> networkEdges;
+    PathResolver resolver;
+
     Impl(const std::string& contents, const std::string& basePath)
         : resolver(basePath) {
         const auto json = parseSonataJson(contents);
@@ -220,12 +222,6 @@ struct CircuitConfig::Impl {
         networkEdges = _fillSubnetwork(networks, "edge", resolver);
         networkNodes = _fillSubnetwork(networks, "node", resolver);
     }
-
-    std::string target_simulator;
-    std::map<std::string, std::string> component_dirs;
-    std::vector<CircuitConfig::SubnetworkFiles> networkNodes;
-    std::vector<CircuitConfig::SubnetworkFiles> networkEdges;
-    PathResolver resolver;
 };
 
 CircuitConfig::CircuitConfig(const std::string& contents, const std::string& basePath)
@@ -256,21 +252,13 @@ std::string CircuitConfig::getComponentPath(const std::string& name) const {
 const std::vector<CircuitConfig::SubnetworkFiles>& CircuitConfig::getNodes() const {
     return impl->networkNodes;
 }
+
 const std::vector<CircuitConfig::SubnetworkFiles>& CircuitConfig::getEdges() const {
     return impl->networkEdges;
 }
 
-}  // namespace sonata
-}  // namespace bbp
-
-// ****************************************************************************
-
-namespace {}  // namespace
-
-namespace bbp {
-namespace sonata {
-
 struct SimulationConfig::Impl {
+    PathResolver _resolver;
     std::string networkConfig;
     std::string nodeSets;
     fs::path outputDir;
@@ -327,9 +315,6 @@ struct SimulationConfig::Impl {
             throw SonataError(fmt::format("Error parsing simulation config: {}", e.what()));
         }
     }
-
-  private:
-    PathResolver _resolver;
 };
 
 SimulationConfig::SimulationConfig(const std::string& source, const std::string& basePath)
@@ -342,6 +327,7 @@ SimulationConfig::~SimulationConfig() = default;
 SimulationConfig SimulationConfig::fromFile(const std::string& path) {
     std::string contents = readFile(path);
     std::string basePath{'.'};  // XXX: use real basepath!
+
     return SimulationConfig(contents, basePath);
 }
 
@@ -359,16 +345,19 @@ std::string SimulationConfig::getSpikesFilepath() const {
 
 std::vector<std::string> SimulationConfig::getCompartmentReportNames() const {
     std::vector<std::string> names;
-    for (const auto& item : _impl->reportFilepaths)
+    for (const auto& item : _impl->reportFilepaths) {
         names.push_back(item.first);
+    }
     return names;
 }
 
 std::string SimulationConfig::getCompartmentReportFilepath(const std::string& name) const {
     const auto i = _impl->reportFilepaths.find(name);
-    if (i == _impl->reportFilepaths.end())
-        throw std::runtime_error("Unknown report: " + name);
+    if (i == _impl->reportFilepaths.end()) {
+        throw SonataError(fmt::format("Unknown report: `{}`", name));
+    }
     return i->second;
 }
+
 }  // namespace sonata
 }  // namespace bbp
