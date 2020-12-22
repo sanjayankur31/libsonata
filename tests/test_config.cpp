@@ -11,14 +11,24 @@
 
 using namespace bbp::sonata;
 
+bool endswith(const std::string haystack, const std::string needle) {
+    return std::equal(needle.rbegin(), needle.rend(), haystack.rbegin());
+}
+
 TEST_CASE("CircuitConfig") {
     SECTION("Simple") {
         const auto config = CircuitConfig::fromFile("./data/config/circuit_config.json");
 
         CHECK(config.getTargetSimulator() == "NEURON");
-        CHECK(config.getNodeSetsPath() == "./node_sets.json");
+        CHECK(config.getNodeSetsPath()[0] == '/');  // is an absolute path
+        CHECK(endswith(config.getNodeSetsPath(), "node_sets.json"));
         CHECK(config.listComponents() == 
               std::set<std::string>{"biophysical_neuron_models_dir", "morphologies_dir"});
+
+        CHECK(config.listNodePopulations() == std::set<std::string>{"nodes-A", "nodes-B"});
+
+        CHECK_THROWS_AS(config.getNodePopulation("DoesNotExist"), SonataError);
+        CHECK(config.getNodePopulation("nodes-A").name() == "nodes-A");
 
         CHECK_THROWS_AS(config.getComponent("DoesNotExist"), SonataError);
     }

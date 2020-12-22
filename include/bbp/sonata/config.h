@@ -16,7 +16,10 @@
 #include <string>
 #include <vector>
 
+#include <bbp/sonata/nodes.h>
+
 #include "common.h"
+
 
 namespace bbp {
 namespace sonata {
@@ -35,7 +38,7 @@ class SONATA_API CircuitConfig
     /** Load SONATA circuit config JSON
      *
      * @param std::string contents of a circuit config JSON file
-     * @throw std::runtime_error if file is not found or invalid
+     * @throw bbp::sonata::SonataError if file is not found or invalid
      */
     CircuitConfig(const std::string& contents, const std::string& basePath);
 
@@ -53,12 +56,22 @@ class SONATA_API CircuitConfig
     std::string getNodeSetsPath() const;
 
     /** Return the names of the components available */
+    std::set<std::string> listNodePopulations() const;
+
+    /** Return the directory of a component in the components_dir given its name
+     *
+     * @param name population name
+     * @throw bbp::sonata::SonataError if population not found
+     */
+    NodePopulation getNodePopulation(const std::string& name) const;
+
+    /** Return the names of the components available */
     std::set<std::string> listComponents() const;
 
     /** Return the directory of a component in the components_dir given its name
      *
      * @param name component name
-     * @throw std::runtime_error if component not found
+     * @throw bbp::sonata::SonataError if component not found
      */
     std::string getComponent(const std::string& name) const;
 
@@ -105,7 +118,7 @@ class SONATA_API SimulationConfig
     std::vector<std::string> getCompartmentReportNames() const;
 
     /** @return the file path to a copartment report by name.
-     *  @throw std::runtime_error is the report doesn't exist *
+     *  @throw bbp::sonata::SonataError is the report doesn't exist *
      */
     std::string getCompartmentReportFilepath(const std::string& name) const;
 
