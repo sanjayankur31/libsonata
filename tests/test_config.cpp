@@ -16,6 +16,11 @@ TEST_CASE("CircuitConfig") {
         const auto config = CircuitConfig::fromFile("./data/config/circuit_config.json");
 
         CHECK(config.getTargetSimulator() == "NEURON");
+        CHECK(config.getNodeSetsPath() == "./node_sets.json");
+        CHECK(config.listComponents() == 
+              std::set<std::string>{"biophysical_neuron_models_dir", "morphologies_dir"});
+
+        CHECK_THROWS_AS(config.getComponent("DoesNotExist"), SonataError);
     }
 
     SECTION("Exception") {

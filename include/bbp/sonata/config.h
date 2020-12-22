@@ -12,11 +12,11 @@
 #pragma once
 
 #include <memory>  // std::unique_ptr
+#include <set>
 #include <string>
 #include <vector>
 
 #include "common.h"
-
 
 namespace bbp {
 namespace sonata {
@@ -49,12 +49,19 @@ class SONATA_API CircuitConfig
     /** Return the target simulator */
     std::string getTargetSimulator() const;
 
+    /** Return the node_sets path */
+    std::string getNodeSetsPath() const;
+
+    /** Return the names of the components available */
+    std::set<std::string> listComponents() const;
+
     /** Return the directory of a component in the components_dir given its name
      *
      * @param name component name
      * @throw std::runtime_error if component not found
      */
-    std::string getComponentPath(const std::string& name) const;
+    std::string getComponent(const std::string& name) const;
+
 
     /** Return the list of network nodes */
     const std::vector<SubnetworkFiles>& getNodes() const;

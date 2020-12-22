@@ -11,11 +11,13 @@
 
 #include <bbp/sonata/config.h>
 
+#include <algorithm> // transform
 #include <cassert>
 #include <fstream>
 #include <memory>
 #include <regex>
 #include <string>
+#include <set>
 
 #include <fmt/format.h>
 #include <ghc/filesystem.hpp>
@@ -61,13 +63,13 @@ class PathResolver
 };
 
 
-std::map<std::string, std::string> _replaceVariables(std::map<std::string, std::string> variables) {
+std::map<std::string, std::string> replaceVariables(std::map<std::string, std::string> variables) {
     constexpr size_t maxIterations = 10;
 
     bool anyChange = true;
     size_t iteration = 0;
 
-    while (anyChange && iteration < maxIterations) {
+    while (anyChange) {
         anyChange = false;
         auto variablesCopy = variables;
 
@@ -85,21 +87,20 @@ std::map<std::string, std::string> _replaceVariables(std::map<std::string, std::
                 }
             }
         }
-        ++iteration;
         variables = variablesCopy;
-    }
 
-    if (iteration == maxIterations) {
-        throw SonataError(
-            "Reached maximum allowed iterations in variable expansion, "
-            "possibly infinite recursion.");
+        if (++iteration == maxIterations) {
+            throw SonataError(
+                "Reached maximum allowed iterations in variable expansion, "
+                "possibly infinite recursion.");
+        }
     }
 
     return variables;
 }
 
-nlohmann::json _expandVariables(const nlohmann::json& json,
-                                const std::map<std::string, std::string>& vars) {
+nlohmann::json expandVariables(const nlohmann::json& json,
+                               const std::map<std::string, std::string>& vars) {
     auto jsonFlat = json.flatten();
 
     // Expand variables in whole json
@@ -163,19 +164,23 @@ std::vector<CircuitConfig::SubnetworkFiles> _fillSubnetwork(nlohmann::json::refe
 
 const char* _defaultSpikesFileName = "spikes.h5";
 
-std::map<std::string, std::string> _readVariables(const nlohmann::json& json) {
-    auto manifest = json["manifest"];
+using Variables = std::map<std::string, std::string>;
 
-    std::map<std::string, std::string> variables;
+Variables readVariables(const nlohmann::json& json) {
+    Variables variables;
+
+    if (json.find("networks") == json.end()) {
+        return variables;
+    }
+
+    auto manifest = json["manifest"];
 
     const std::regex regexVariable(R"(\$[a-zA-Z0-9_]*)");
 
-    // Find variables in manifest section
     for (auto it = manifest.begin(); it != manifest.end(); ++it) {
         const auto name = it.key();
 
         if (std::regex_match(name, regexVariable)) {
-            assert(variables.find(name) == variables.end());
             variables[name] = it.value();
         } else {
             throw SonataError(fmt::format("Invalid variable `{}`", name));
@@ -188,8 +193,8 @@ std::map<std::string, std::string> _readVariables(const nlohmann::json& json) {
 nlohmann::json parseSonataJson(const std::string& contents) {
     const auto json = nlohmann::json::parse(contents);
 
-    const auto vars = _replaceVariables(_readVariables(json));
-    return _expandVariables(json, vars);
+    const auto vars = replaceVariables(readVariables(json));
+    return expandVariables(json, vars);
 }
 
 }  // namespace
@@ -199,11 +204,13 @@ namespace bbp {
 namespace sonata {
 
 struct CircuitConfig::Impl {
+    PathResolver resolver;
+
     std::string target_simulator;
-    std::map<std::string, std::string> component_dirs;
+    std::string node_sets_file;
+    std::map<std::string, std::string> components;
     std::vector<CircuitConfig::SubnetworkFiles> networkNodes;
     std::vector<CircuitConfig::SubnetworkFiles> networkEdges;
-    PathResolver resolver;
 
     Impl(const std::string& contents, const std::string& basePath)
         : resolver(basePath) {
@@ -214,11 +221,16 @@ struct CircuitConfig::Impl {
         } catch (nlohmann::detail::out_of_range&) {
         }
 
+        try {
+            node_sets_file = json.at("node_sets_file");
+        } catch (nlohmann::detail::out_of_range&) {
+        }
+
         if (json.find("networks") == json.end())
             throw SonataError("Error parsing config: `networks` not specified");
 
         auto networks = json.at("networks");
-        component_dirs = _fillComponents(json, resolver);
+        components = _fillComponents(json, resolver);
         networkEdges = _fillSubnetwork(networks, "edge", resolver);
         networkNodes = _fillSubnetwork(networks, "node", resolver);
     }
@@ -240,9 +252,21 @@ std::string CircuitConfig::getTargetSimulator() const {
     return impl->target_simulator;
 }
 
-std::string CircuitConfig::getComponentPath(const std::string& name) const {
-    const auto it = impl->component_dirs.find(name);
-    if (it == impl->component_dirs.end()) {
+std::string CircuitConfig::getNodeSetsPath() const{
+    return impl->node_sets_file;
+}
+
+std::set<std::string> CircuitConfig::listComponents() const {
+    std::set<std::string> result;
+    std::transform(impl->components.begin(), impl->components.end(),
+                   std::inserter(result, result.end()),
+                   [](std::pair<std::string, std::string> p){ return p.first; });
+    return result;
+}
+
+std::string CircuitConfig::getComponent(const std::string& name) const {
+    const auto it = impl->components.find(name);
+    if (it == impl->components.end()) {
         throw SonataError(fmt::format("Could not find component '{}'", name));
     }
 
@@ -258,7 +282,8 @@ const std::vector<CircuitConfig::SubnetworkFiles>& CircuitConfig::getEdges() con
 }
 
 struct SimulationConfig::Impl {
-    PathResolver _resolver;
+    PathResolver resolver;
+
     std::string networkConfig;
     std::string nodeSets;
     fs::path outputDir;
@@ -266,27 +291,27 @@ struct SimulationConfig::Impl {
     std::map<std::string, std::string> reportFilepaths;
 
     Impl(const std::string& contents, const std::string& basePath)
-        : _resolver(basePath) {
+        : resolver(basePath) {
         const auto json = parseSonataJson(contents);
 
         if (json.find("network") == json.end())
             throw SonataError("Error parsing simulation config: network not specified");
 
-        networkConfig = _resolver.toAbsolute(json.at("network"));
+        networkConfig = resolver.toAbsolute(json.at("network"));
 
         if (json.find("node_sets_file") != json.end())
-            nodeSets = _resolver.toAbsolute(json["node_sets_file"]);
+            nodeSets = resolver.toAbsolute(json["node_sets_file"]);
 
         try {
             const auto& output = json.at("output");
-            outputDir = fs::path(_resolver.toAbsolute(output.at("output_dir")));
+            outputDir = fs::path(resolver.toAbsolute(output.at("output_dir")));
 
             auto reference = output.find("spikes_file");
             if (reference == output.end())
-                spikesFile = _resolver.toAbsolute((outputDir / _defaultSpikesFileName).string());
+                spikesFile = resolver.toAbsolute((outputDir / _defaultSpikesFileName).string());
             else {
                 const std::string filename = *reference;
-                spikesFile = _resolver.toAbsolute((outputDir / filename).string());
+                spikesFile = resolver.toAbsolute((outputDir / filename).string());
             }
 
             const auto reports = json.find("reports");
@@ -303,10 +328,10 @@ struct SimulationConfig::Impl {
                     reference = report->find("file_name");
                     if (reference != report->end()) {
                         const std::string filename = *reference;
-                        reportFilepaths[name] = _resolver.toAbsolute(
+                        reportFilepaths[name] = resolver.toAbsolute(
                             (outputDir / filename).string());
                     } else {
-                        reportFilepaths[name] = _resolver.toAbsolute(
+                        reportFilepaths[name] = resolver.toAbsolute(
                             (outputDir / fs::path(name + ".h5")).string());
                     }
                 }
