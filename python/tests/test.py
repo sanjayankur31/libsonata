@@ -8,7 +8,7 @@ from libsonata import (EdgeStorage, NodeStorage,
                        SpikeReader, SpikePopulation,
                        SomaReportReader, SomaReportPopulation,
                        ElementReportReader, ElementReportPopulation,
-                       NodeSets,
+                       NodeSets, CircuitConfig
                        )
 
 
@@ -439,6 +439,22 @@ class TestNodePopulationNodeSet(unittest.TestCase):
          new = NodeSets(j).toJSON()
          ns1 = NodeSets(new)
          self.assertEqual(new, ns1.toJSON())
+
+class TestCircuitConfig(unittest.TestCase):
+    def setUp(self):
+        self.config = CircuitConfig.from_file(os.path.join(PATH, 'config/circuit_config.json'))
+
+    def test_basic(self):
+        self.assertEqual(self.config.target_simulator, "NEURON")
+        self.assertEqual(self.config.node_sets_path,
+                         os.path.abspath(os.path.join(PATH, 'config/node_sets.json')))
+        self.assertEqual(self.config.node_populations,
+                         {'nodes-A', 'nodes-B'})
+        self.assertEqual(self.config.node_population('nodes-A').name, 'nodes-A')
+        self.assertEqual(self.config.components,
+                         {'morphologies_dir', 'biophysical_neuron_models_dir'})
+        self.assertEqual(self.config.component('morphologies_dir'),
+                         os.path.abspath(os.path.join(PATH, 'config/morphologies')))
 
 
 if __name__ == '__main__':

@@ -3,6 +3,7 @@
 #include <pybind11/stl.h>
 
 #include <bbp/sonata/common.h>
+#include <bbp/sonata/config.h>
 #include <bbp/sonata/edges.h>
 #include <bbp/sonata/node_sets.h>
 #include <bbp/sonata/nodes.h>
@@ -425,6 +426,15 @@ PYBIND11_MODULE(_libsonata, m) {
         .def("materialize", &NodeSets::materialize, DOC_NODESETS(materialize))
         .def("toJSON", &NodeSets::toJSON, DOC_NODESETS(toJSON));
 
+    py::class_<CircuitConfig>(m, "CircuitConfig", "")
+        .def(py::init<const std::string&, const std::string&>())
+        .def_static("from_file", &CircuitConfig::fromFile)
+        .def_property_readonly("target_simulator", &CircuitConfig::getTargetSimulator)
+        .def_property_readonly("node_sets_path", &CircuitConfig::getNodeSetsPath)
+        .def_property_readonly("node_populations", &CircuitConfig::listNodePopulations)
+        .def("node_population", &CircuitConfig::getNodePopulation)
+        .def_property_readonly("components", &CircuitConfig::listComponents)
+        .def("component", &CircuitConfig::getComponent);
 
     bindPopulationClass<EdgePopulation>(
         m, "EdgePopulation", "Collection of edges with attributes and connectivity index")

@@ -75,7 +75,6 @@ class SONATA_API CircuitConfig
      */
     std::string getComponent(const std::string& name) const;
 
-
     /** Return the list of network nodes */
     const std::vector<SubnetworkFiles>& getNodes() const;
 
