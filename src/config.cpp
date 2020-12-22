@@ -85,7 +85,7 @@ std::map<std::string, std::string> replaceVariables(std::map<std::string, std::s
 
             for (auto& vJ : variablesCopy) {
                 auto& vJValue = vJ.second;
-                auto startPos = vJValue.find(vIKey);
+                const auto startPos = vJValue.find(vIKey);
 
                 if (startPos != std::string::npos) {
                     vJValue.replace(startPos, vIKey.length(), vIValue);
@@ -112,15 +112,16 @@ nlohmann::json expandVariables(const nlohmann::json& json,
     // Expand variables in whole json
     for (auto it = jsonFlat.begin(); it != jsonFlat.end(); ++it) {
         auto& value = it.value();
-        if (!value.is_string())
+        if (!value.is_string()) {
             continue;
+        }
 
         auto valueStr = value.get<std::string>();
 
         for (auto& var : vars) {
-            auto& varName = var.first;
-            auto& varValue = var.second;
-            auto startPos = valueStr.find(varName);
+            const auto& varName = var.first;
+            const auto& varValue = var.second;
+            const auto startPos = valueStr.find(varName);
 
             if (startPos != std::string::npos) {
                 valueStr.replace(startPos, varName.length(), varValue);
@@ -133,29 +134,31 @@ nlohmann::json expandVariables(const nlohmann::json& json,
 }
 
 
-std::map<std::string, std::string> _fillComponents(const nlohmann::json& json,
-                                                   const PathResolver& resolver) {
-    const auto comps = json.at("components");
-    std::map<std::string, std::string> output;
+std::map<std::string, std::string> fillComponents(const nlohmann::json& json,
+                                                  const PathResolver& resolver) {
+    const auto components = json.at("components");
+    std::map<std::string, std::string> result;
 
-    for (auto it = comps.begin(); it != comps.end(); ++it)
-        output[it.key()] = resolver.toAbsolute(it.value());
+    for (auto it = components.begin(); it != components.end(); ++it) {
+        result[it.key()] = resolver.toAbsolute(it.value());
+    }
 
-    return output;
+    return result;
 }
 
-std::vector<CircuitConfig::SubnetworkFiles> _fillSubnetwork(nlohmann::json::reference networks,
-                                                            const std::string& prefix,
-                                                            const PathResolver& resolver) {
+std::vector<CircuitConfig::SubnetworkFiles> fillSubnetwork(nlohmann::json& networks,
+                                                           const std::string& prefix,
+                                                           const PathResolver& resolver) {
     std::vector<CircuitConfig::SubnetworkFiles> output;
 
     const std::string component = prefix + "s";
     const std::string elementsFile = prefix + "s_file";
     const std::string typesFile = prefix + "_types_file";
 
-    auto iter = networks.find(component);
-    if (iter == networks.end())
+    const auto iter = networks.find(component);
+    if (iter == networks.end()) {
         return output;
+    }
 
     for (const auto& node : *iter) {
         auto h5File = resolver.toAbsolute(node.at(elementsFile));
@@ -178,7 +181,7 @@ Variables readVariables(const nlohmann::json& json) {
         return variables;
     }
 
-    auto manifest = json["manifest"];
+    const auto manifest = json["manifest"];
 
     const std::regex regexVariable(R"(\$[a-zA-Z0-9_]*)");
 
@@ -204,11 +207,11 @@ nlohmann::json parseSonataJson(const std::string& contents) {
 
 using PopulationStorage = bbp::sonata::PopulationStorage<bbp::sonata::NodePopulation>;
 std::map<std::string, CircuitConfig::SubnetworkFiles> resolvePopulations(
-    std::vector<CircuitConfig::SubnetworkFiles> networkNodes) {
+    const std::vector<CircuitConfig::SubnetworkFiles>& networkNodes) {
     std::map<std::string, CircuitConfig::SubnetworkFiles> result;
 
-    for (auto network : networkNodes) {
-        auto population = PopulationStorage(network.elements, network.types);
+    for (const auto& network : networkNodes) {
+        const auto population = PopulationStorage(network.elements, network.types);
         for (auto name : population.populationNames()) {
             result[name] = network;
         }
@@ -244,13 +247,14 @@ struct CircuitConfig::Impl {
             node_sets_file = resolver.toAbsolute(json["node_sets_file"]);
         }
 
-        if (json.find("networks") == json.end())
+        if (json.find("networks") == json.end()) {
             throw SonataError("Error parsing config: `networks` not specified");
+        }
 
         auto networks = json.at("networks");
-        components = _fillComponents(json, resolver);
-        networkNodes = _fillSubnetwork(networks, "node", resolver);
-        networkEdges = _fillSubnetwork(networks, "edge", resolver);
+        components = fillComponents(json, resolver);
+        networkNodes = fillSubnetwork(networks, "node", resolver);
+        networkEdges = fillSubnetwork(networks, "edge", resolver);
     }
 };
 
@@ -268,7 +272,7 @@ std::string CircuitConfig::getTargetSimulator() const {
     return impl->target_simulator;
 }
 
-std::string CircuitConfig::getNodeSetsPath() const{
+std::string CircuitConfig::getNodeSetsPath() const {
     return impl->node_sets_file;
 }
 
@@ -413,11 +417,11 @@ std::vector<std::string> SimulationConfig::getCompartmentReportNames() const {
 }
 
 std::string SimulationConfig::getCompartmentReportFilepath(const std::string& name) const {
-    const auto i = _impl->reportFilepaths.find(name);
-    if (i == _impl->reportFilepaths.end()) {
+    const auto it = _impl->reportFilepaths.find(name);
+    if (it == _impl->reportFilepaths.end()) {
         throw SonataError(fmt::format("Unknown report: `{}`", name));
     }
-    return i->second;
+    return it->second;
 }
 
 }  // namespace sonata
