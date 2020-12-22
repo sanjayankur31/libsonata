@@ -16,6 +16,7 @@
 #include <string>
 #include <vector>
 
+#include <bbp/sonata/edges.h>
 #include <bbp/sonata/nodes.h>
 
 #include "common.h"
@@ -30,11 +31,6 @@ namespace sonata {
 class SONATA_API CircuitConfig
 {
   public:
-    struct SubnetworkFiles {
-        std::string elements;
-        std::string types;
-    };
-
     /** Load SONATA circuit config JSON
      *
      * @param std::string contents of a circuit config JSON file
@@ -55,7 +51,7 @@ class SONATA_API CircuitConfig
     /** Return the node_sets path */
     std::string getNodeSetsPath() const;
 
-    /** Return the names of the components available */
+    /** Return the names of the node population available */
     std::set<std::string> listNodePopulations() const;
 
     /** Return the directory of a component in the components_dir given its name
@@ -64,6 +60,16 @@ class SONATA_API CircuitConfig
      * @throw bbp::sonata::SonataError if population not found
      */
     NodePopulation getNodePopulation(const std::string& name) const;
+
+    /** Return the names of the edge populations available */
+    std::set<std::string> listEdgePopulations() const;
+
+    /** Return the directory of a component in the components_dir given its name
+     *
+     * @param name population name
+     * @throw bbp::sonata::SonataError if population not found
+     */
+    EdgePopulation getEdgePopulation(const std::string& name) const;
 
     /** Return the names of the components available */
     std::set<std::string> listComponents() const;
@@ -74,12 +80,6 @@ class SONATA_API CircuitConfig
      * @throw bbp::sonata::SonataError if component not found
      */
     std::string getComponent(const std::string& name) const;
-
-    /** Return the list of network nodes */
-    const std::vector<SubnetworkFiles>& getNodes() const;
-
-    /** Return the list of network edges */
-    const std::vector<SubnetworkFiles>& getEdges() const;
 
   private:
     struct Impl;

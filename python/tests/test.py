@@ -448,9 +448,15 @@ class TestCircuitConfig(unittest.TestCase):
         self.assertEqual(self.config.target_simulator, "NEURON")
         self.assertEqual(self.config.node_sets_path,
                          os.path.abspath(os.path.join(PATH, 'config/node_sets.json')))
+
         self.assertEqual(self.config.node_populations,
                          {'nodes-A', 'nodes-B'})
         self.assertEqual(self.config.node_population('nodes-A').name, 'nodes-A')
+
+        self.assertEqual(self.config.edge_populations,
+                         {'edges-AB', 'edges-AC'})
+        self.assertEqual(self.config.edge_population('edges-AB').name, 'edges-AB')
+
         self.assertEqual(self.config.components,
                          {'morphologies_dir', 'biophysical_neuron_models_dir'})
         self.assertEqual(self.config.component('morphologies_dir'),

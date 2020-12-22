@@ -433,6 +433,8 @@ PYBIND11_MODULE(_libsonata, m) {
         .def_property_readonly("node_sets_path", &CircuitConfig::getNodeSetsPath)
         .def_property_readonly("node_populations", &CircuitConfig::listNodePopulations)
         .def("node_population", &CircuitConfig::getNodePopulation)
+        .def_property_readonly("edge_populations", &CircuitConfig::listEdgePopulations)
+        .def("edge_population", &CircuitConfig::getEdgePopulation)
         .def_property_readonly("components", &CircuitConfig::listComponents)
         .def("component", &CircuitConfig::getComponent);
 

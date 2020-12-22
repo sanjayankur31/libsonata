@@ -146,10 +146,15 @@ std::map<std::string, std::string> fillComponents(const nlohmann::json& json,
     return result;
 }
 
-std::vector<CircuitConfig::SubnetworkFiles> fillSubnetwork(nlohmann::json& networks,
-                                                           const std::string& prefix,
-                                                           const PathResolver& resolver) {
-    std::vector<CircuitConfig::SubnetworkFiles> output;
+struct SubnetworkFiles {
+    std::string elements;
+    std::string types;
+};
+
+std::vector<SubnetworkFiles> fillSubnetwork(nlohmann::json& networks,
+                                            const std::string& prefix,
+                                            const PathResolver& resolver) {
+    std::vector<SubnetworkFiles> output;
 
     const std::string component = prefix + "s";
     const std::string elementsFile = prefix + "s_file";
@@ -164,7 +169,7 @@ std::vector<CircuitConfig::SubnetworkFiles> fillSubnetwork(nlohmann::json& netwo
         auto h5File = resolver.toAbsolute(node.at(elementsFile));
         auto csvFile = node.at(typesFile).is_null() ? std::string()
                                                     : resolver.toAbsolute(node.at(typesFile));
-        output.emplace_back(CircuitConfig::SubnetworkFiles{h5File, csvFile});
+        output.emplace_back(SubnetworkFiles{h5File, csvFile});
     }
 
     return output;
@@ -205,10 +210,12 @@ nlohmann::json parseSonataJson(const std::string& contents) {
     return expandVariables(json, vars);
 }
 
-using PopulationStorage = bbp::sonata::PopulationStorage<bbp::sonata::NodePopulation>;
-std::map<std::string, CircuitConfig::SubnetworkFiles> resolvePopulations(
-    const std::vector<CircuitConfig::SubnetworkFiles>& networkNodes) {
-    std::map<std::string, CircuitConfig::SubnetworkFiles> result;
+
+template <typename Population>
+std::map<std::string, SubnetworkFiles> resolvePopulations(
+    const std::vector<SubnetworkFiles>& networkNodes) {
+    using PopulationStorage = bbp::sonata::PopulationStorage<Population>;
+    std::map<std::string, SubnetworkFiles> result;
 
     for (const auto& network : networkNodes) {
         const auto population = PopulationStorage(network.elements, network.types);
@@ -219,6 +226,16 @@ std::map<std::string, CircuitConfig::SubnetworkFiles> resolvePopulations(
     return result;
 }
 
+template <typename Population>
+std::set<std::string> listPopulations(const std::vector<SubnetworkFiles>& networkNodes) {
+    std::set<std::string> result;
+    const auto names = resolvePopulations<Population>(networkNodes);
+    std::transform(names.begin(),
+                   names.end(),
+                   std::inserter(result, result.end()),
+                   [](std::pair<std::string, SubnetworkFiles> p) { return p.first; });
+    return result;
+}
 }  // namespace
 
 
@@ -231,8 +248,8 @@ struct CircuitConfig::Impl {
     std::string target_simulator;
     std::string node_sets_file;
     std::map<std::string, std::string> components;
-    std::vector<CircuitConfig::SubnetworkFiles> networkNodes;
-    std::vector<CircuitConfig::SubnetworkFiles> networkEdges;
+    std::vector<SubnetworkFiles> networkNodes;
+    std::vector<SubnetworkFiles> networkEdges;
 
     Impl(const std::string& contents, const std::string& basePath)
         : resolver(basePath) {
@@ -277,24 +294,30 @@ std::string CircuitConfig::getNodeSetsPath() const {
 }
 
 std::set<std::string> CircuitConfig::listNodePopulations() const {
-    std::set<std::string> result;
-    const auto names = resolvePopulations(impl->networkNodes);
-    std::transform(names.begin(),
-                   names.end(),
-                   std::inserter(result, result.end()),
-                   [](std::pair<std::string, SubnetworkFiles> p) { return p.first; });
-    return result;
+    return listPopulations<NodePopulation>(impl->networkNodes);
 }
 
-
-NodePopulation CircuitConfig::getNodePopulation(const std::string& name) const {
-    const auto names = resolvePopulations(impl->networkNodes);
+template <typename Population>
+Population getPopulation(const std::vector<SubnetworkFiles>& network, const std::string name) {
+    const auto names = resolvePopulations<Population>(network);
     const auto it = names.find(name);
     if (it == names.end()) {
         throw SonataError(fmt::format("Could not find population '{}'", name));
     }
 
-    return NodePopulation(it->second.elements, it->second.types, name);
+    return Population(it->second.elements, it->second.types, name);
+}
+
+NodePopulation CircuitConfig::getNodePopulation(const std::string& name) const {
+    return getPopulation<NodePopulation>(impl->networkNodes, name);
+}
+
+std::set<std::string> CircuitConfig::listEdgePopulations() const {
+    return listPopulations<EdgePopulation>(impl->networkEdges);
+}
+
+EdgePopulation CircuitConfig::getEdgePopulation(const std::string& name) const {
+    return getPopulation<EdgePopulation>(impl->networkEdges, name);
 }
 
 std::set<std::string> CircuitConfig::listComponents() const {
@@ -312,14 +335,6 @@ std::string CircuitConfig::getComponent(const std::string& name) const {
     }
 
     return it->second;
-}
-
-const std::vector<CircuitConfig::SubnetworkFiles>& CircuitConfig::getNodes() const {
-    return impl->networkNodes;
-}
-
-const std::vector<CircuitConfig::SubnetworkFiles>& CircuitConfig::getEdges() const {
-    return impl->networkEdges;
 }
 
 struct SimulationConfig::Impl {
