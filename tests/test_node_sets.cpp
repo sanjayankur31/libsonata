@@ -44,7 +44,13 @@ TEST_CASE("NodeSetParse") {
         auto node_sets = R"({"compound": ["missing"] })";
         CHECK_THROWS_AS(NodeSets{node_sets}, SonataError);
     }
-    SECTION("CompoundMissing") {
+
+    SECTION("CompoundRecursiveMissing") {
+        auto node_sets = R"({"compound0": ["compound1"], "compound1": ["missing"] })";
+        CHECK_THROWS_AS(NodeSets{node_sets}, SonataError);
+    }
+
+    SECTION("MissingNameInMaterialize") {
         const NodePopulation population("./data/nodes1.h5", "", "nodes-A");
         auto node_sets = R"({ "NodeSet0": { "attr-Y": 21 } })";
         NodeSets ns(node_sets);
@@ -178,6 +184,9 @@ TEST_CASE("NodeSet") {
         std::string j = ns0.toJSON();
         NodeSets ns1(j);
         CHECK(ns0.toJSON() == ns1.toJSON());
+
+        auto ns = NodeSets::fromFile("./data/node_sets.json");
+        CHECK(ns.toJSON() == ns1.toJSON());
     }
 
     SECTION("names") {

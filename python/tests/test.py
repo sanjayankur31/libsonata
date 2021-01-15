@@ -1,4 +1,5 @@
 import os
+import pathlib
 import unittest
 
 import numpy as np
@@ -8,7 +9,8 @@ from libsonata import (EdgeStorage, NodeStorage,
                        SpikeReader, SpikePopulation,
                        SomaReportReader, SomaReportPopulation,
                        ElementReportReader, ElementReportPopulation,
-                       NodeSets, CircuitConfig
+                       NodeSets,
+                       CircuitConfig
                        )
 
 
@@ -25,6 +27,24 @@ class TestSelection(unittest.TestCase):
         self.assertEqual(selection.flat_size, 5)
         self.assertEqual(selection.flatten().tolist(), [3, 4, 0, 1, 2])
 
+    def test_dtypes(self):
+        for dtype in (np.uint, np.uint16, np.uint32, np.uint64, ):
+            self.assertEqual(Selection(np.array([1, 0, 1, 2], dtype=dtype)).flatten().tolist(),
+                             [1, 0, 1, 2])
+
+        # these work due to forcecast
+        for dtype in (np.int, np.int16, np.int32, np.int64, ):
+            self.assertEqual(Selection(np.array([1, 0, 1, 2], dtype=dtype)).flatten().tolist(),
+                             [1, 0, 1, 2])
+
+        # these fail due to being negative node ids
+        self.assertRaises(SonataError, Selection, [-1, 0, 1, 2])
+        self.assertRaises(SonataError, Selection, [1, 0, -1, 2])
+        Selection(((0, 1), (1, 2)))
+        self.assertRaises(SonataError, Selection, ((-2, -1), (1, 2)))
+
+        self.assertRaises(SonataError, Selection, [[-1, 1], [3, 4], [5, 6]])
+
     def test_from_values(self):
         values = [
             [1, 3, 4, 1],
@@ -35,6 +55,14 @@ class TestSelection(unittest.TestCase):
         self.assertEqual(Selection(np.array(values, dtype=np.uint64, order='C')[0]).ranges, expected)
         self.assertEqual(Selection(np.array(values, dtype=np.uint32, order='C')[0]).ranges, expected)
         self.assertEqual(Selection(np.array(values, dtype=np.uint64, order='F')[0]).ranges, expected)
+
+        self.assertRaises(ValueError, Selection, np.zeros((3, 3, 3), dtype=np.uint64))
+
+        self.assertRaises(SonataError, Selection, ((2, 1), (1, 2)))
+
+    def test_from_ranges(self):
+        Selection(((0, 1), (1, 2)))
+        self.assertRaises(SonataError, Selection, ((2, 1), (1, 2)))
 
     def test_from_values_empty(self):
         self.assertFalse(Selection([]))
@@ -296,6 +324,7 @@ class TestSomaReportPopulation(unittest.TestCase):
         sel_empty = self.test_obj['All'].get(node_ids=[])
         np.testing.assert_allclose(sel_empty.data, np.empty(shape=(0, 0)))
 
+
 class TestElementReportPopulation(unittest.TestCase):
     def setUp(self):
         path = os.path.join(PATH, "elements.h5")
@@ -424,21 +453,25 @@ class TestNodePopulationNodeSet(unittest.TestCase):
         self.assertEqual(sel, Selection(((1, 4), )))
 
     def test_NodeSet_toJSON(self):
-         j = '''
-         {"bio_layer45": {
-               "model_type": "biophysical",
-               "location": ["layer4", "layer5"]
-           },
-           "V1_point_prime": {
-               "population": "biophysical",
-               "model_type": "point",
-               "node_id": [1, 2, 3, 5, 7, 9]
-           },
-           "combined": ["bio_layer45", "V1_point_prime"]
-         }'''
-         new = NodeSets(j).toJSON()
-         ns1 = NodeSets(new)
-         self.assertEqual(new, ns1.toJSON())
+        j = '''
+        {"bio_layer45": {
+              "model_type": "biophysical",
+              "location": ["layer4", "layer5"]
+          },
+          "V1_point_prime": {
+              "population": "biophysical",
+              "model_type": "point",
+              "node_id": [1, 2, 3, 5, 7, 9]
+          },
+          "combined": ["bio_layer45", "V1_point_prime"]
+        }'''
+        new = NodeSets(j).toJSON()
+        ns1 = NodeSets(new)
+        self.assertEqual(new, ns1.toJSON())
+
+        ns = NodeSets.from_file(os.path.join(PATH, 'node_sets.json'))
+        self.assertEqual(new, ns.toJSON())
+
 
 class TestCircuitConfig(unittest.TestCase):
     def setUp(self):
@@ -461,6 +494,17 @@ class TestCircuitConfig(unittest.TestCase):
                          {'morphologies_dir', 'biophysical_neuron_models_dir'})
         self.assertEqual(self.config.component('morphologies_dir'),
                          os.path.abspath(os.path.join(PATH, 'config/morphologies')))
+
+
+def test_path_ctor():
+    #  make sure constructors that take file paths can use pathlib.Path
+    path = pathlib.Path(PATH)
+
+    NodeStorage(path / 'nodes1.h5')
+    EdgeStorage(path / 'edges1.h5')
+    SpikeReader(path / 'spikes.h5')
+    SomaReportReader(path / 'somas.h5')
+    ElementReportReader(path / 'elements.h5')
 
 
 if __name__ == '__main__':

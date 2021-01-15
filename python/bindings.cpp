@@ -12,6 +12,7 @@
 #include "generated/docstrings.h"
 
 #include <fmt/format.h>
+#include <fmt/ranges.h>
 
 #include <cstdint>
 #include <memory>
@@ -181,6 +182,10 @@ py::class_<Population, std::shared_ptr<Population>> bindPopulationClass(py::modu
                                &Population::enumerationNames,
                                DOC_POP(enumerationNames))
         .def("__len__", &Population::size, imbueElementName(DOC_POP(size)).c_str())
+        .def("__repr__",
+             [clsName](Population& obj) {
+                 return fmt::format("{} [name={}, count={}]", clsName, obj.name(), obj.size());
+             })
         .def("select_all", &Population::selectAll, imbueElementName(DOC_POP(selectAll)).c_str())
         .def("enumeration_values",
              &Population::enumerationValues,
@@ -294,7 +299,9 @@ py::class_<Storage> bindStorageClass(py::module& m, const char* clsName, const c
     };
     return py::class_<Storage>(
                m, clsName, imbuePopulationClassName(DOC(bbp, sonata, PopulationStorage)).c_str())
-        .def(py::init<const std::string&, const std::string&>(),
+        .def(py::init([](py::object h5_filepath, py::object csv_filepath) {
+                 return Storage(py::str(h5_filepath), py::str(csv_filepath));
+             }),
              "h5_filepath"_a,
              "csv_filepath"_a = "")
         .def_property_readonly("population_names",
@@ -326,7 +333,7 @@ void bindReportReader(py::module& m, const std::string& prefix) {
         .def_readonly("ids", &DataFrame<KeyType>::ids)
 
         // .data and .time members are owned by this c++ object. We can't do std::move.
-        // To avoid copies we must declare the owner of the data is the current python
+        // To avoid copies we must declare the owner of the data as the current python
         // object. Numpy will adjust owner reference count according to returned arrays
         // clang-format off
         .def_property_readonly("data", [](const DataFrame<KeyType>& dframe) {
@@ -368,7 +375,8 @@ void bindReportReader(py::module& m, const std::string& prefix) {
                                &ReportType::Population::getDataUnits,
                                DOC_REPORTREADER_POP(getDataUnits));
     py::class_<ReportType>(m, (prefix + "ReportReader").c_str(), "Used to read somas files")
-        .def(py::init<const std::string&>())
+        .def(py::init([](py::object h5_filepath) { return ReportType(py::str(h5_filepath)); }),
+             "h5_filepath"_a)
         .def("get_population_names", &ReportType::getPopulationNames, "Get list of all populations")
         .def("__getitem__", &ReportType::openPopulation);
 }
@@ -378,13 +386,45 @@ PYBIND11_MODULE(_libsonata, m) {
     py::class_<Selection>(m,
                           "Selection",
                           "ID sequence in the form convenient for querying attributes")
-        .def(py::init<const Selection::Ranges&>(), "ranges"_a, "Selection from list of intervals")
-        .def(py::init([](py::array_t<uint64_t, py::array::c_style | py::array::forcecast> values) {
+        .def(py::init<const Selection::Ranges&>(),
+             py::arg("ranges"),
+             "Selection from list of intervals")
+        .def(py::init([](py::array_t<uint64_t, py::array::c_style> values) {
                  const auto raw = values.unchecked<1>();
                  return Selection::fromValues(raw.data(0), raw.data(raw.shape(0)));
              }),
+             py::arg("values").noconvert(true),
+             "Selection from list of IDs: passing np.array with dtype np.uint64 is faster")
+        .def(py::init([](py::array_t<int64_t, py::array::c_style | py::array::forcecast> values) {
+                 /* Both the Selection::Range and fromValues cases are handled here:
+                  * It doesn't seem possible to prevent the cast of [(-1, 1), (2, 3) ... ] style
+                  * Ranges; the Numpy auto-conversion from happening in this case.
+                  */
+                 py::buffer_info info = values.request();
+                 if (info.ndim == 2) {
+                     const auto raw = values.unchecked<2>();
+                     Selection::Ranges ranges;
+                     ranges.reserve(raw.shape(0));
+                     for (py::ssize_t i = 0; i < raw.shape(0); ++i) {
+                         if (raw(i, 0) < 0 || raw(i, 1) < 0) {
+                             throw SonataError("Negative value passed to Selection");
+                         }
+                         ranges.emplace_back(raw(i, 0), raw(i, 1));
+                     }
+                     return Selection(ranges);
+                 }
+                 // one dimensional case; ie fromValues
+                 const auto raw = values.unchecked<1>();
+                 for (size_t i = 0; i < raw.shape(0); ++i) {
+                     if (raw[i] < 0) {
+                         throw SonataError("Negative value passed to Selection");
+                     }
+                 }
+
+                 return Selection::fromValues(raw.data(0), raw.data(raw.shape(0)));
+             }),
              "values"_a,
-             "Selection from list of IDs")
+             "Selection from list of IDs: passing np.array with dtype np.uint64 is faster")
         .def_property_readonly("ranges", &Selection::ranges, DOC_SEL(ranges))
         .def(
             "flatten", [](Selection& obj) { return asArray(obj.flatten()); }, DOC_SEL(flatten))
@@ -396,7 +436,19 @@ PYBIND11_MODULE(_libsonata, m) {
         .def("__eq__", &bbp::sonata::operator==, "Compare selection contents are equal")
         .def("__ne__", &bbp::sonata::operator!=, "Compare selection contents are not equal")
         .def("__or__", &bbp::sonata::operator|, "Union of selections")
-        .def("__and__", &bbp::sonata::operator&, "Intersection of selections");
+        .def("__and__", &bbp::sonata::operator&, "Intersection of selections")
+        .def("__repr__", [](Selection& obj) {
+            const auto ranges = obj.ranges();
+            const size_t max_count = 10;
+
+            if (ranges.size() < max_count) {
+                return fmt::format("Selection([{}])", fmt::join(ranges, ", "));
+            }
+
+            return fmt::format("Selection([{}, ..., {}])",
+                               fmt::join(ranges.begin(), ranges.begin() + 3, ", "),
+                               fmt::join(ranges.end() - 3, ranges.end(), ", "));
+        });
     py::implicitly_convertible<py::list, Selection>();
     py::implicitly_convertible<py::tuple, Selection>();
 
@@ -422,6 +474,7 @@ PYBIND11_MODULE(_libsonata, m) {
 
     py::class_<NodeSets>(m, "NodeSets", "")
         .def(py::init<const std::string&>())
+        .def_static("from_file", &NodeSets::fromFile)
         .def_property_readonly("names", &NodeSets::names, DOC_NODESETS(names))
         .def("materialize", &NodeSets::materialize, DOC_NODESETS(materialize))
         .def("toJSON", &NodeSets::toJSON, DOC_NODESETS(toJSON));
@@ -545,7 +598,8 @@ PYBIND11_MODULE(_libsonata, m) {
             },
             DOC_SPIKEREADER_POP(getSorting));
     py::class_<SpikeReader>(m, "SpikeReader", "Used to read spike files")
-        .def(py::init<const std::string&>())
+        .def(py::init([](py::object h5_filepath) { return SpikeReader(py::str(h5_filepath)); }),
+             "h5_filepath"_a)
         .def("get_population_names",
              &SpikeReader::getPopulationNames,
              DOC_SPIKEREADER(getPopulationNames))

@@ -1,4 +1,5 @@
 #include <algorithm>  // std::find, std::transform
+#include <cassert>
 #include <cmath>
 #include <fmt/format.h>
 #include <sstream>
@@ -6,15 +7,18 @@
 
 #include <json.hpp>
 
+#include "utils.h"  // readFile
+
 #include <bbp/sonata/node_sets.h>
 
 namespace bbp {
 namespace sonata {
 
-namespace {
-using json = nlohmann::json;
+namespace detail {
 
 const size_t MAX_COMPOUND_RECURSION = 10;
+
+using json = nlohmann::json;
 
 template <typename T>
 std::string toString(const std::string& key, const std::vector<T>& values) {
@@ -27,6 +31,87 @@ std::string toString(const std::string& key, const std::vector<std::string>& val
     return fmt::format(R"("{}": ["{}"])", key, fmt::join(values, "\", \""));
 }
 
+class NodeSets;
+
+class NodeSetRule
+{
+  public:
+    virtual ~NodeSetRule(){};
+
+    virtual Selection materialize(const NodeSets&, const NodePopulation&) const = 0;
+    virtual std::string toJSON() const = 0;
+};
+
+using NodeSetRules = std::vector<std::unique_ptr<NodeSetRule>>;
+void parse_basic(const json& j, std::map<std::string, NodeSetRules>& node_sets);
+void parse_compound(const json& j, std::map<std::string, NodeSetRules>& node_sets);
+
+class NodeSets
+{
+    std::map<std::string, NodeSetRules> node_sets_;
+
+  public:
+    NodeSets(const std::string& content) {
+        json j = json::parse(content);
+        if (!j.is_object()) {
+            throw SonataError("Top level node_set must be an object");
+        }
+
+        // Need to two pass parsing the json so that compound lookup can rely
+        // on all the basic rules existing
+        parse_basic(j, node_sets_);
+        parse_compound(j, node_sets_);
+    }
+
+    Selection materialize(const std::string& name, const NodePopulation& population) const {
+        Selection ret = population.selectAll();
+
+        const auto& node_set = node_sets_.find(name);
+        if (node_set == node_sets_.end()) {
+            throw SonataError(fmt::format("Unknown node_set {}", name));
+        }
+
+        for (const auto& ns : node_set->second) {
+            Selection a = ns->materialize(*this, population);
+            ret = ret & a;
+        }
+        return ret;
+    }
+
+
+    std::set<std::string> names() const {
+        std::set<std::string> ret;
+        std::transform(begin(node_sets_),
+                       end(node_sets_),
+                       std::inserter(ret, ret.begin()),
+                       [](decltype(node_sets_)::value_type const& pair) { return pair.first; });
+        return ret;
+    }
+
+    std::string toJSON() const {
+        auto replace_trailing_coma = [](std::string& s, char c) {
+            s.pop_back();
+            s.pop_back();
+            s.push_back(c);
+        };
+
+        std::string ret{"{\n"};
+        for (const auto& pair : node_sets_) {
+            ret += fmt::format(R"(  "{}": {{)", pair.first);
+            for (const auto& pred : pair.second) {
+                ret += pred->toJSON();
+                ret += ", ";
+            }
+            replace_trailing_coma(ret, ' ');
+            ret += "},\n";
+        }
+        replace_trailing_coma(ret, '\n');
+        ret += "}";
+
+        return ret;
+    }
+};
+
 template <typename T>
 class NodeSetBasicRule: public NodeSetRule
 {
@@ -35,7 +120,8 @@ class NodeSetBasicRule: public NodeSetRule
         : attribute_(std::move(attribute))
         , values_(values) {}
 
-    Selection materialize(const NodeSets& /* unused */, const NodePopulation& np) const final {
+    Selection materialize(const detail::NodeSets& /* unused */,
+                          const NodePopulation& np) const final {
         Selection ret{{}};
         for (const auto& v : values_) {
             ret = ret | np.matchAttributeValues(attribute_, v);
@@ -58,7 +144,8 @@ class NodeSetBasicPopulation: public NodeSetRule
     explicit NodeSetBasicPopulation(std::vector<std::string>&& values)
         : values_(values) {}
 
-    Selection materialize(const NodeSets& /* unused */, const NodePopulation& np) const final {
+    Selection materialize(const detail::NodeSets& /* unused */,
+                          const NodePopulation& np) const final {
         if (std::find(values_.begin(), values_.end(), np.name()) != values_.end()) {
             return np.selectAll();
         }
@@ -80,7 +167,8 @@ class NodeSetBasicNodeIds: public NodeSetRule
     explicit NodeSetBasicNodeIds(Selection::Values&& values)
         : values_(values) {}
 
-    Selection materialize(const NodeSets& /* unused */, const NodePopulation& np) const final {
+    Selection materialize(const detail::NodeSets& /* unused */,
+                          const NodePopulation& np) const final {
         return np.selectAll() & Selection::fromValues(values_.begin(), values_.end());
     }
 
@@ -100,7 +188,7 @@ class NodeSetCompoundRule: public NodeSetRule
         : name_(std::move(name))
         , targets_(targets) {}
 
-    Selection materialize(const NodeSets& ns, const NodePopulation& np) const final {
+    Selection materialize(const detail::NodeSets& ns, const NodePopulation& np) const final {
         Selection ret{{}};
         for (const auto& target : targets_) {
             ret = ret | ns.materialize(target, np);
@@ -228,10 +316,9 @@ void check_compound(const std::map<std::string, NodeSetRules>& node_sets,
         throw SonataError("Compound node_set recursion depth exceeded");
     }
 
-    auto it = compound_rules.find(name);
-    if (it == compound_rules.end()) {
-        throw SonataError(fmt::format("Missing compound name target {}", name));
-    }
+    const auto it = compound_rules.find(name);
+    assert(it != compound_rules.end());
+
     for (auto const& target : it->second) {
         if (node_sets.count(target) == 0 && compound_rules.count(target) == 0) {
             throw SonataError(fmt::format("Missing '{}' from node_sets", target));
@@ -265,66 +352,31 @@ void parse_compound(const json& j, std::map<std::string, NodeSetRules>& node_set
         node_sets.emplace(rule.first, std::move(rules));
     }
 }
-}  // anonymous namespace
 
-NodeSets::NodeSets(const std::string& content) {
-    json j = json::parse(content);
-    if (!j.is_object()) {
-        throw SonataError("Top level node_set must be an object");
-    }
+}  // namespace detail
 
-    // Need to two pass parsing the json so that compound lookup can rely
-    // on all the basic rules existing
-    parse_basic(j, node_sets_);
-    parse_compound(j, node_sets_);
+NodeSets::NodeSets(const std::string& content)
+    : impl_(new detail::NodeSets(content)) {}
+
+NodeSets::NodeSets(NodeSets&&) = default;
+NodeSets& NodeSets::operator=(NodeSets&&) = default;
+NodeSets::~NodeSets() = default;
+
+NodeSets NodeSets::fromFile(const std::string& path) {
+    const auto contents = readFile(path);
+    return NodeSets(contents);
 }
 
 Selection NodeSets::materialize(const std::string& name, const NodePopulation& population) const {
-    Selection ret = population.selectAll();
-
-    const auto& node_set = node_sets_.find(name);
-    if (node_set == node_sets_.end()) {
-        throw SonataError(fmt::format("Unknown node_set {}", name));
-    }
-
-    for (const auto& ns : node_set->second) {
-        Selection a = ns->materialize(*this, population);
-        ret = ret & a;
-    }
-    return ret;
+    return impl_->materialize(name, population);
 }
 
-
 std::set<std::string> NodeSets::names() const {
-    std::set<std::string> ret;
-    std::transform(begin(node_sets_),
-                   end(node_sets_),
-                   std::inserter(ret, ret.begin()),
-                   [](decltype(node_sets_)::value_type const& pair) { return pair.first; });
-    return ret;
+    return impl_->names();
 }
 
 std::string NodeSets::toJSON() const {
-    auto replace_trailing_coma = [](std::string& s, char c) {
-        s.pop_back();
-        s.pop_back();
-        s.push_back(c);
-    };
-
-    std::string ret{"{\n"};
-    for (const auto& pair : node_sets_) {
-        ret += fmt::format(R"(  "{}": {{)", pair.first);
-        for (const auto& pred : pair.second) {
-            ret += pred->toJSON();
-            ret += ", ";
-        }
-        replace_trailing_coma(ret, ' ');
-        ret += "},\n";
-    }
-    replace_trailing_coma(ret, '\n');
-    ret += "}";
-
-    return ret;
+    return impl_->toJSON();
 }
 
 }  // namespace sonata
