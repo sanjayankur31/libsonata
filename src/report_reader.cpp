@@ -99,7 +99,7 @@ SpikeReader::SpikeReader(const std::string& filename)
     : filename_(filename) {}
 
 std::vector<std::string> SpikeReader::getPopulationNames() const {
-    H5::File file(filename_, H5::File::ReadOnly);
+    H5::File file(filename_, H5::File::ReadOnly, H5::MPIOFileDriver(MPI_COMM_WORLD, MPI_INFO_NULL));
     return file.getGroup("/spikes").listObjectNames();
 }
 
@@ -145,7 +145,7 @@ SpikeReader::Population::Sorting SpikeReader::Population::getSorting() const {
 
 SpikeReader::Population::Population(const std::string& filename,
                                     const std::string& populationName) {
-    H5::File file(filename, H5::File::ReadOnly);
+    H5::File file(filename, H5::File::ReadOnly, H5::MPIOFileDriver(MPI_COMM_WORLD, MPI_INFO_NULL));
     const auto pop_path = std::string("/spikes/") + populationName;
     const auto pop = file.getGroup(pop_path);
 
@@ -199,7 +199,7 @@ void SpikeReader::Population::filterTimestamp(Spikes& spikes, double tstart, dou
 
 template <typename T>
 ReportReader<T>::ReportReader(const std::string& filename)
-    : file_(filename, H5::File::ReadOnly) {}
+    : file_(filename, H5::File::ReadOnly, H5::MPIOFileDriver(MPI_COMM_WORLD, MPI_INFO_NULL)) {}
 
 template <typename T>
 std::vector<std::string> ReportReader<T>::getPopulationNames() const {
@@ -217,7 +217,7 @@ auto ReportReader<T>::openPopulation(const std::string& populationName) const ->
 
 template <typename T>
 ReportReader<T>::Population::Population(const H5::File& file, const std::string& populationName)
-    : pop_group_(file.getGroup(std::string("/report/") + populationName)) {
+    : file_(file), pop_group_(file.getGroup(std::string("/report/") + populationName)) {
     {
         const auto mapping_group = pop_group_.getGroup("mapping");
         mapping_group.getDataSet("node_ids").read(nodes_ids_);

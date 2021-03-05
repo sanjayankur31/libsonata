@@ -65,6 +65,7 @@ endif()
 # Dependencies
 # =============================================================================
 
+option(HIGHFIVE_PARALLEL_HDF5 "Configure HighFive as parallel" ON)
 if (EXTLIB_FROM_SUBMODULES)
     add_subdirectory(extlib EXCLUDE_FROM_ALL)
 else()

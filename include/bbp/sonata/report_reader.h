@@ -142,6 +142,7 @@ class SONATA_API ReportReader
                                            const nonstd::optional<double>& tstop) const;
 
         std::map<NodeID, Range> nodes_pointers_;
+        H5::File file_;
         H5::Group pop_group_;
         std::vector<NodeID> nodes_ids_;
         double tstart_, tstop_, tstep_;
