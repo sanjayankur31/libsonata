@@ -1,5 +1,6 @@
 #include <bbp/sonata/report_reader.h>
 #include <fmt/format.h>
+#include <mpi.h>
 
 constexpr double EPSILON = 1e-6;
 
