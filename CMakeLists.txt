@@ -74,6 +74,7 @@ else()
     find_package(HighFive REQUIRED)
     find_package(nlohmann_json REQUIRED)
 endif()
+find_package(MPI REQUIRED)
 
 # =============================================================================
 # Targets
@@ -111,6 +112,7 @@ foreach(TARGET sonata_shared sonata_static)
         PUBLIC
             $<BUILD_INTERFACE:${SONATA_INCLUDE_DIR}>
             $<INSTALL_INTERFACE:include>
+            ${MPI_CXX_INCLUDE_PATH}
     )
     target_compile_options(${TARGET}
         PRIVATE ${SONATA_COMPILE_OPTIONS}
@@ -138,6 +140,7 @@ target_link_libraries(sonata_shared
     PRIVATE fmt::fmt-header-only
     PRIVATE HighFive
     PRIVATE nlohmann_json::nlohmann_json
+    PRIVATE ${MPI_CXX_LIBRARIES}
 )
 
 target_compile_definitions(sonata_static
