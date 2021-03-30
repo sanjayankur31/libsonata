@@ -17,7 +17,11 @@
 #include <string>
 #include <utility>  // std::move
 #include <vector>
+#include <unistd.h>
 
+#define DBGPRINT(input, ...) \
+        fprintf(stderr, "[P%d] %s:%d -> %s() / " input "\n", \
+                        getpid(), __FILE__, __LINE__, __func__, ##__VA_ARGS__)
 
 namespace bbp {
 namespace sonata {

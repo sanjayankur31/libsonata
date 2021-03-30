@@ -15,6 +15,7 @@
 
 #include <fmt/format.h>
 #include <highfive/H5File.hpp>
+#include <typeinfo>
 
 namespace bbp {
 namespace sonata {
@@ -57,25 +58,36 @@ std::vector<T> _readChunk(const HighFive::DataSet& dset, const Selection::Range&
     std::vector<T> result;
     assert(range.first < range.second);
     auto chunkSize = static_cast<size_t>(range.second - range.first);
-    dset.select({static_cast<size_t>(range.first)}, {chunkSize}).read(result);
+    auto atope = dset.select({static_cast<size_t>(range.first)}, {chunkSize});
+    DBGPRINT("chunkSize=%zu range.first=%zu range.second=%zu type=%s",
+             chunkSize, range.first, range.second, typeid(T).name());
+    atope.read(result);
+    DBGPRINT("result.size()=%zu", result.size());
     return result;
 }
 
 
 template <typename T, typename std::enable_if<!std::is_pod<T>::value>::type* = nullptr>
 std::vector<T> _readSelection(const HighFive::DataSet& dset, const Selection& selection) {
+    DBGPRINT("");
     if (selection.ranges().size() == 1) {
+    DBGPRINT("");
         return _readChunk<T>(dset, selection.ranges().front());
     }
 
     std::vector<T> result;
+    DBGPRINT("");
 
     // for POD types we can pre-allocate result vector... see below template specialization
     for (const auto& range : selection.ranges()) {
+    DBGPRINT("");
         for (auto& x : _readChunk<T>(dset, range)) {
+    DBGPRINT("");
             result.emplace_back(std::move(x));
         }
+    DBGPRINT("");
     }
+    DBGPRINT("");
 
     return result;
 }
@@ -83,15 +95,22 @@ std::vector<T> _readSelection(const HighFive::DataSet& dset, const Selection& se
 
 template <typename T, typename std::enable_if<std::is_pod<T>::value>::type* = nullptr>
 std::vector<T> _readSelection(const HighFive::DataSet& dset, const Selection& selection) {
+    DBGPRINT("");
     std::vector<T> result(selection.flatSize());
 
     T* dst = result.data();
+    DBGPRINT("");
     for (const Selection::Range& range : selection.ranges()) {
+    DBGPRINT("");
         assert(range.first < range.second);
+    DBGPRINT("");
         auto chunkSize = static_cast<size_t>(range.second - range.first);
+    DBGPRINT("");
         dset.select({static_cast<size_t>(range.first)}, {chunkSize}).read(dst);
+    DBGPRINT("");
         dst += chunkSize;
     }
+    DBGPRINT("");
 
     return result;
 }
