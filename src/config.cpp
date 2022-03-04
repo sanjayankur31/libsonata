@@ -22,7 +22,6 @@
 #include <fmt/format.h>
 #include <nlohmann/json.hpp>
 
-#include "../extlib/filesystem.hpp"
 #include "population.hpp"
 #include "utils.h"
 
@@ -32,7 +31,7 @@ namespace sonata {
 
 namespace {
 // to be replaced by std::filesystem once C++17 is used
-namespace fs = ghc::filesystem;
+namespace fs = std::filesystem;
 
 std::map<std::string, std::string> replaceVariables(std::map<std::string, std::string> variables) {
     constexpr size_t maxIterations = 10;
