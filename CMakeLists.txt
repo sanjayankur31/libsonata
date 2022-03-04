@@ -157,9 +157,9 @@ target_include_directories(sonata_static
 install(TARGETS sonata_shared sonata_static
     EXPORT sonata-targets
     LIBRARY
-        DESTINATION lib
+    DESTINATION ${LIB_INSTALL_DIR}
     ARCHIVE
-        DESTINATION lib
+    DESTINATION ${LIB_INSTALL_DIR}
 )
 
 install(DIRECTORY ${SONATA_INCLUDE_DIR}/bbp
