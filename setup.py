@@ -49,44 +49,7 @@ class CMakeBuild(build_ext):
             self.build_extension(ext)
 
     def build_extension(self, ext):
-        extdir = os.path.abspath(os.path.dirname(self.get_ext_fullpath(ext.name)))
-
-        build_type =  os.environ.get("SONATA_BUILD_TYPE", "Release")
-        if self.debug:
-            build_type = "Debug"
-
-        cmake_args = [
-            "-DCMAKE_LIBRARY_OUTPUT_DIRECTORY=" + extdir,
-            "-DSONATA_TESTS={}".format(os.environ.get("SONATA_TESTS", "OFF")),
-            "-DEXTLIB_FROM_SUBMODULES=ON",
-            "-DSONATA_PYTHON=ON",
-            "-DSONATA_VERSION=" + self.distribution.get_version(),
-            "-DCMAKE_BUILD_TYPE={}".format(build_type),
-            "-DSONATA_CXX_WARNINGS=OFF",
-            '-DPYTHON_EXECUTABLE=' + sys.executable
-        ]
-
-        build_args = ["--config", build_type,
-                      "--target", self.target,
-                      "--",
-                      "-j{}".format(max(MIN_CPU_CORES, get_cpu_count())),
-                      ]
-
-        if not os.path.exists(self.build_temp):
-            os.makedirs(self.build_temp)
-
-        env = os.environ.copy()
-        env["CXXFLAGS"] = '{} -DVERSION_INFO=\\"{}\\"'.format(
-            env.get("CXXFLAGS", ""), self.distribution.get_version()
-        )
-
-        subprocess.check_call(
-            ["cmake", ext.sourcedir] + cmake_args, cwd=self.build_temp, env=env
-        )
-
-        subprocess.check_call(
-            ["cmake", "--build", "."] + build_args, cwd=self.build_temp
-        )
+        return None
 
 
 # nearly verbatim from how h5py handles is
