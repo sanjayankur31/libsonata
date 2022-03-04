@@ -18,6 +18,7 @@ target_link_libraries(unittests
 )
 add_test(NAME unittests COMMAND unittests WORKING_DIRECTORY ${CMAKE_CURRENT_LIST_DIR})
 
+include(Catch)
 catch_discover_tests(unittests
     WORKING_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}
     )
