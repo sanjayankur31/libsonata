@@ -23,7 +23,6 @@
 #include <fmt/format.h>
 #include <nlohmann/json.hpp>
 
-#include "../extlib/filesystem.hpp"
 #include "population.hpp"
 #include "utils.h"
 
@@ -139,7 +138,7 @@ NLOHMANN_JSON_SERIALIZE_ENUM(
 
 namespace {
 // to be replaced by std::filesystem once C++17 is used
-namespace fs = ghc::filesystem;
+namespace fs = std::filesystem;
 
 void raiseOnBiophysicalPopulationErrors(const std::string& population,
                                         const bbp::sonata::NodePopulationProperties& properties) {
