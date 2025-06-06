@@ -91,6 +91,7 @@ endif()
 
 set(SONATA_SRC
     src/common.cpp
+    src/compartment_sets.cpp
     src/config.cpp
     src/edge_index.cpp
     src/edges.cpp

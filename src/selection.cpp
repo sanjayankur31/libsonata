@@ -61,7 +61,6 @@ Selection union_(const Ranges& lhs, const Ranges& rhs) {
 }
 }  // namespace detail
 
-
 Selection::Selection(Selection::Ranges ranges)
     : ranges_(std::move(ranges)) {
     detail::_checkRanges(ranges_);
@@ -119,6 +118,16 @@ Selection operator|(const Selection& lhs, const Selection& rhs) {
     return detail::union_(lhs.ranges(), rhs.ranges());
 }
 
+bool Selection::contains(Value node_id) const {
+    Ranges ret;
+    std::copy(ranges_.begin(), ranges_.end(), std::back_inserter(ret));
+    ret = detail::_sortAndMerge(ret);
+    auto it = std::lower_bound(ret.begin(), ret.end(), node_id, [](const Range& range, Value v) {
+        return range[1] <= v;  // Keep searching if node_id >= end
+    });
+
+    return it != ret.end() && (*it)[0] <= node_id && node_id < (*it)[1];
+}
 
 }  // namespace sonata
 }  // namespace bbp
