@@ -152,6 +152,22 @@ class CompartmentSet
         compartment_locations_.reserve(comp_it->size());
         for (auto&& el : *comp_it) {
             compartment_locations_.emplace_back(CompartmentSet::_parseCompartmentLocation(el));
+            if (compartment_locations_.size() >= 2) {
+                const auto& prev = compartment_locations_[compartment_locations_.size() - 2];
+                const auto& curr = compartment_locations_.back();
+                if (curr <= prev) {
+                    throw SonataError(
+                        fmt::format("CompartmentSet 'compartment_set' must be strictly sorted "
+                                    "(no duplicates). Found CompartmentLocation({}, {}, {}) before "
+                                    "CompartmentLocation({}, {}, {})",
+                                    prev.nodeId,
+                                    prev.sectionId,
+                                    prev.offset,
+                                    curr.nodeId,
+                                    curr.sectionId,
+                                    curr.offset));
+                }
+            }
         }
         compartment_locations_.shrink_to_fit();
     }
@@ -217,7 +233,7 @@ class CompartmentSet
         j["compartment_set"] = nlohmann::json::array();
         for (const auto& elem : compartment_locations_) {
             j["compartment_set"].push_back(
-                nlohmann::json::array({elem.nodeId, elem.sectionIndex, elem.offset}));
+                nlohmann::json::array({elem.nodeId, elem.sectionId, elem.offset}));
         }
 
         return j;
