@@ -403,7 +403,17 @@ SimulationConfig::Input parseInputModule(const nlohmann::json& valueIt,
         parseMandatory(valueIt, "input_type", debugStr, input.inputType);
         parseMandatory(valueIt, "delay", debugStr, input.delay);
         parseMandatory(valueIt, "duration", debugStr, input.duration);
-        parseMandatory(valueIt, "node_set", debugStr, input.nodeSet);
+
+        parseOptional(valueIt, "node_set", input.nodeSet);
+        parseOptional(valueIt, "compartment_set", input.compartmentSet);
+
+        if (input.nodeSet.has_value() && input.compartmentSet.has_value()) {
+            throw SonataError("`node_set` is not allowed if `compartment_set` is set in " +
+                              debugStr);
+        } else if (!input.nodeSet.has_value() && !input.compartmentSet.has_value()) {
+            throw SonataError("One of `node_set` or `compartment_set` need to have a value in " +
+                              debugStr);
+        }
     };
 
     switch (module) {
@@ -466,16 +476,8 @@ SimulationConfig::Input parseInputModule(const nlohmann::json& valueIt,
     case Module::noise: {
         SimulationConfig::InputNoise ret;
         parseCommon(ret);
-        const auto mean = valueIt.find("mean");
-        const auto mean_percent = valueIt.find("mean_percent");
-
-        if (mean != valueIt.end()) {
-            parseOptional(valueIt, "mean", ret.mean);
-        }
-
-        if (mean_percent != valueIt.end()) {
-            parseOptional(valueIt, "mean_percent", ret.meanPercent);
-        }
+        parseOptional(valueIt, "mean", ret.mean);
+        parseOptional(valueIt, "mean_percent", ret.meanPercent);
 
         if (ret.mean.has_value() && ret.meanPercent.has_value()) {
             throw SonataError("Both `mean` or `mean_percent` have values in " + debugStr);
