@@ -83,7 +83,8 @@ NLOHMANN_JSON_SERIALIZE_ENUM(SimulationConfig::Report::Type,
                               {SimulationConfig::Report::Type::compartment, "compartment"},
                               {SimulationConfig::Report::Type::lfp, "lfp"},
                               {SimulationConfig::Report::Type::summation, "summation"},
-                              {SimulationConfig::Report::Type::synapse, "synapse"}})
+                              {SimulationConfig::Report::Type::synapse, "synapse"},
+                              {SimulationConfig::Report::Type::compartment_set, "compartment_set"}})
 NLOHMANN_JSON_SERIALIZE_ENUM(SimulationConfig::Report::Scaling,
                              {{SimulationConfig::Report::Scaling::invalid, nullptr},
                               {SimulationConfig::Report::Scaling::none, "none"},
@@ -341,7 +342,7 @@ template <typename Type>
 void raiseIfInvalidEnum(const char* /*unused*/,
                         const Type& /*unused*/,
                         const std::string& /*unused*/,
-                        std::false_type /* tag */) {}
+                        std::false_type /* tag */) { }
 
 template <typename Type>
 void parseMandatory(const nlohmann::json& it,
@@ -402,7 +403,17 @@ SimulationConfig::Input parseInputModule(const nlohmann::json& valueIt,
         parseMandatory(valueIt, "input_type", debugStr, input.inputType);
         parseMandatory(valueIt, "delay", debugStr, input.delay);
         parseMandatory(valueIt, "duration", debugStr, input.duration);
-        parseMandatory(valueIt, "node_set", debugStr, input.nodeSet);
+
+        parseOptional(valueIt, "node_set", input.nodeSet);
+        parseOptional(valueIt, "compartment_set", input.compartmentSet);
+
+        if (input.nodeSet.has_value() && input.compartmentSet.has_value()) {
+            throw SonataError("`node_set` is not allowed if `compartment_set` is set in " +
+                              debugStr);
+        } else if (!input.nodeSet.has_value() && !input.compartmentSet.has_value()) {
+            throw SonataError("One of `node_set` or `compartment_set` need to have a value in " +
+                              debugStr);
+        }
     };
 
     switch (module) {
@@ -465,16 +476,8 @@ SimulationConfig::Input parseInputModule(const nlohmann::json& valueIt,
     case Module::noise: {
         SimulationConfig::InputNoise ret;
         parseCommon(ret);
-        const auto mean = valueIt.find("mean");
-        const auto mean_percent = valueIt.find("mean_percent");
-
-        if (mean != valueIt.end()) {
-            parseOptional(valueIt, "mean", ret.mean);
-        }
-
-        if (mean_percent != valueIt.end()) {
-            parseOptional(valueIt, "mean_percent", ret.meanPercent);
-        }
+        parseOptional(valueIt, "mean", ret.mean);
+        parseOptional(valueIt, "mean_percent", ret.meanPercent);
 
         if (ret.mean.has_value() && ret.meanPercent.has_value()) {
             throw SonataError("Both `mean` or `mean_percent` have values in " + debugStr);
@@ -923,10 +926,11 @@ class CircuitConfig::Parser
             "node",
             status,
             [&](NodePopulationProperties& popProperties, const nlohmann::json& popData) {
-            popProperties.spatialSegmentIndexDir = getJSONPath(popData, "spatial_segment_index_dir");
-            popProperties.vasculatureFile = getOptionalJSONPath(popData, "vasculature_file");
-            popProperties.vasculatureMesh = getOptionalJSONPath(popData, "vasculature_mesh");
-            popProperties.microdomainsFile = getOptionalJSONPath(popData, "microdomains_file");
+                popProperties.spatialSegmentIndexDir = getJSONPath(popData,
+                                                                   "spatial_segment_index_dir");
+                popProperties.vasculatureFile = getOptionalJSONPath(popData, "vasculature_file");
+                popProperties.vasculatureMesh = getOptionalJSONPath(popData, "vasculature_mesh");
+                popProperties.microdomainsFile = getOptionalJSONPath(popData, "microdomains_file");
             });
     }
 
@@ -936,10 +940,12 @@ class CircuitConfig::Parser
             "edge",
             status,
             [&](EdgePopulationProperties& popProperties, const nlohmann::json& popData) {
-            popProperties.spatialSynapseIndexDir = getJSONPath(popData, "spatial_synapse_index_dir");
-            popProperties.endfeetMeshesFile = getOptionalJSONPath(popData, "endfeet_meshes_file");
-            popProperties.spineMorphologiesDir = getOptionalJSONPath(popData,
-                                                                     "spine_morphologies_dir");
+                popProperties.spatialSynapseIndexDir = getJSONPath(popData,
+                                                                   "spatial_synapse_index_dir");
+                popProperties.endfeetMeshesFile = getOptionalJSONPath(popData,
+                                                                      "endfeet_meshes_file");
+                popProperties.spineMorphologiesDir = getOptionalJSONPath(popData,
+                                                                         "spine_morphologies_dir");
             });
     }
 
@@ -1143,14 +1149,40 @@ class SimulationConfig::Parser
             const std::string debugStr = "report " + it.key();
 
             parseOptional(valueIt, "cells", report.cells, parseNodeSet());
-            parseOptional(valueIt, "sections", report.sections, {Report::Sections::soma});
             parseMandatory(valueIt, "type", debugStr, report.type);
-            parseOptional(valueIt, "scaling", report.scaling, {Report::Scaling::area});
+            if (report.type == Report::Type::compartment_set) {
+                parseMandatory(valueIt, "compartment_set", debugStr, report.compartment_set);
+                if (valueIt.find("sections") != valueIt.end()) {
+                    throw SonataError(
+                        "Field 'sections' is not allowed for reports of type 'compartment_set'.");
+                }
+                if (report.type == Report::Type::compartment_set &&
+                    valueIt.find("compartments") != valueIt.end()) {
+                    throw SonataError(
+                        "Field 'compartments' is not allowed for reports of type "
+                        "'compartment_set'.");
+                }
+            } else {
+                if (valueIt.find("compartment_set") != valueIt.end()) {
+                    throw SonataError(
+                        "Field 'compartment_set' is not allowed for reports of type "
+                        "'compartment_set'.");
+                }
+            }
+            parseOptional(valueIt,
+                          "sections",
+                          report.sections,
+                          {report.type == Report::Type::compartment_set ? Report::Sections::invalid
+                                                                        : Report::Sections::soma});
             parseOptional(valueIt,
                           "compartments",
                           report.compartments,
-                          {report.sections == Report::Sections::soma ? Report::Compartments::center
-                                                                     : Report::Compartments::all});
+                          {report.type == Report::Type::compartment_set
+                               ? Report::Compartments::invalid
+                               : (report.sections == Report::Sections::soma
+                                      ? Report::Compartments::center
+                                      : Report::Compartments::all)});
+            parseOptional(valueIt, "scaling", report.scaling, {Report::Scaling::area});
             parseMandatory(valueIt, "variable_name", debugStr, report.variableName);
             parseOptional(valueIt, "unit", report.unit, {"mV"});
             parseMandatory(valueIt, "dt", debugStr, report.dt);
@@ -1205,6 +1237,15 @@ class SimulationConfig::Parser
                 return val;
             }
         }
+    }
+
+    std::string parseCompartmentSetsFile() const noexcept {
+        std::string val;
+        if (_json.contains("compartment_sets_file")) {
+            val = _json["compartment_sets_file"];
+            return toAbsolute(_basePath, val);
+        }
+        return val;
     }
 
     nonstd::optional<std::string> parseNodeSet() const {
@@ -1380,6 +1421,7 @@ SimulationConfig::SimulationConfig(const std::string& content, const std::string
     _connection_overrides = parser.parseConnectionOverrides();
     _targetSimulator = parser.parseTargetSimulator();
     _nodeSetsFile = parser.parseNodeSetsFile();
+    _compartmentSetsFile = parser.parseCompartmentSetsFile();
     _nodeSet = parser.parseNodeSet();
     _metaData = parser.parseMetaData();
     _betaFeatures = parser.parseBetaFeatures();
@@ -1454,17 +1496,21 @@ const std::string& SimulationConfig::getNodeSetsFile() const noexcept {
     return _nodeSetsFile;
 }
 
+const std::string& SimulationConfig::getCompartmentSetsFile() const noexcept {
+    return _compartmentSetsFile;
+}
+
 const nonstd::optional<std::string>& SimulationConfig::getNodeSet() const noexcept {
     return _nodeSet;
 }
 
-const std::unordered_map<std::string, variantValueType>& SimulationConfig::getMetaData() const
-    noexcept {
+const std::unordered_map<std::string, variantValueType>& SimulationConfig::getMetaData()
+    const noexcept {
     return _metaData;
 }
 
-const std::unordered_map<std::string, variantValueType>& SimulationConfig::getBetaFeatures() const
-    noexcept {
+const std::unordered_map<std::string, variantValueType>& SimulationConfig::getBetaFeatures()
+    const noexcept {
     return _betaFeatures;
 }
 

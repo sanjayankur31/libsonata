@@ -13,10 +13,12 @@
      },
      "manifest": {
          "$OUTPUT_DIR": "./some/path",
-         "$ELECTRODES_DIR": "./electrodes/"
+         "$ELECTRODES_DIR": "./electrodes/",
+         "$BASE_DIR": "./"
      },
      "target_simulator": "CORENEURON",
      "node_set" : "Column",
+     "compartment_sets_file": "$BASE_DIR/compartment_sets.json",
      "run": {
          "tstop": 1000,
          "dt": 0.025,
@@ -70,6 +72,14 @@
             "delay": 0,
             "duration": 15,
             "node_set":"Column"
+        },
+        "ex_linear_compartment_set": {
+            "input_type": "current_clamp",
+            "module": "linear",
+            "amp_start": 0.15,
+            "delay": 0,
+            "duration": 15,
+            "compartment_set":"cs1"
         },
         "ex_rel_linear": {
             "input_type": "current_clamp",
@@ -306,6 +316,15 @@
              "start_time": 0,
              "end_time": 500,
              "enabled": true
+         },
+         "compartment_set_v": {
+            "type": "compartment_set",
+            "compartment_set": "cs0",
+            "variable_name": "v",
+            "unit": "mV",
+            "dt": 0.1,
+            "start_time": 0.0,
+            "end_time": 100.0
          }
     }
 }

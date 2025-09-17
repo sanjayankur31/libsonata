@@ -171,6 +171,11 @@ class SONATA_API CircuitConfig
     const std::string& getNodeSetsPath() const;
 
     /**
+     * Returns the path to the compartment sets file.
+     */
+    const std::string& getCompartmentSetsPath() const;
+
+    /**
      *  Returns a set with all available population names across all the node networks.
      */
     std::set<std::string> listNodePopulations() const;
@@ -328,7 +333,8 @@ class SONATA_API SimulationConfig
         std::string name;
     };
 
-    struct ModificationTTX: public ModificationBase {};
+    struct ModificationTTX: public ModificationBase {
+    };
 
     struct ModificationConfigureAllSections: public ModificationBase {
         /// For “ConfigureAllSections” manipulation, a snippet of python code to perform one or more
@@ -376,9 +382,10 @@ class SONATA_API SimulationConfig
      */
     struct Report {
         enum class Sections { invalid = -1, soma, axon, dend, apic, all };
-        enum class Type { invalid = -1, compartment, lfp, summation, synapse };
+        enum class Type { invalid = -1, compartment, lfp, summation, synapse, compartment_set };
         enum class Scaling { invalid = -1, none, area };
         enum class Compartments { invalid = -1, center, all };
+
 
         /// Node sets on which to report
         std::string cells;
@@ -392,6 +399,8 @@ class SONATA_API SimulationConfig
         /// For compartment type, select compartments to report.
         /// Default value: "center"(for sections: soma), "all"(for other sections)
         Compartments compartments;
+        /// Name of the compartment set (from compartment_set.json) used for generating the report.
+        std::string compartment_set;
         /// The simulation variable to access. The variables available are model dependent. For
         /// summation type, it supports multiple variables by comma separated strings. E.g. “ina”,
         /// "AdEx.V_M, v", "i_membrane, IClamp".
@@ -448,8 +457,10 @@ class SONATA_API SimulationConfig
         double delay{};
         /// Time duration for how long input is activated (ms)
         double duration{};
-        /// Node set which is affected by input
-        std::string nodeSet;
+        /// Node set which is affected by input. Not allowed in case of CompartmentSet
+        nonstd::optional<std::string> nodeSet{nonstd::nullopt};
+        /// CompartmentSet which is affected by the input. It has priority over nodeSet
+        nonstd::optional<std::string> compartmentSet{nonstd::nullopt};
     };
 
     struct InputLinear: public InputBase {
@@ -782,9 +793,19 @@ class SONATA_API SimulationConfig
     const std::string& getNodeSetsFile() const noexcept;
 
     /**
-     * Returns the name of node set to be instantiated for the simulation, default = None
+     * Returns the path of compartment sets file
+     */
+    const std::string& getCompartmentSetsFile() const noexcept;
+
+    /**
+     * Returns the name of the node set to be instantiated for the simulation, default = None
      */
     const nonstd::optional<std::string>& getNodeSet() const noexcept;
+
+    /**
+     * Returns the name of the compartment set to be instantiated for the simulation, default = None
+     */
+    const nonstd::optional<std::string>& getCompartmentSet() const noexcept;
 
     /**
      * Returns the metadata section
@@ -827,6 +848,8 @@ class SONATA_API SimulationConfig
     SimulatorType _targetSimulator;
     // Path of node sets file
     std::string _nodeSetsFile;
+    // Path of compartment sets file
+    std::string _compartmentSetsFile;
     // Name of node set
     nonstd::optional<std::string> _nodeSet{nonstd::nullopt};
     // Remarks on the simulation

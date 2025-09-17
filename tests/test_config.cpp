@@ -359,13 +359,13 @@ TEST_CASE("SimulationConfig") {
         CHECK(configAllSects.sectionConfigure == "%s.gSK_E2bar_SK_E2 = 0");
 
         CHECK_THROWS_AS(config.getReport("DoesNotExist"), SonataError);
-
         CHECK(config.listReportNames() == std::set<std::string>{
               "axonal_comp_centers",
               "cell_imembrane",
               "compartment",
               "soma",
-              "lfp"
+              "lfp",
+              "compartment_set_v"
               });
 
         CHECK(config.getReport("soma").cells == "Column");
@@ -387,6 +387,10 @@ TEST_CASE("SimulationConfig") {
         CHECK(config.getReport("cell_imembrane").endTime == 500.);
         CHECK(config.getReport("cell_imembrane").variableName == "i_membrane, IClamp");
         CHECK(config.getReport("lfp").type == SimulationConfig::Report::Type::lfp);
+        CHECK(config.getReport("compartment_set_v").type == SimulationConfig::Report::Type::compartment_set);
+        CHECK(config.getReport("compartment_set_v").sections == SimulationConfig::Report::Sections::invalid);
+        CHECK(config.getReport("compartment_set_v").compartments == SimulationConfig::Report::Compartments::invalid);
+        CHECK(config.getReport("compartment_set_v").compartment_set == "cs0");
 
         CHECK_NOTHROW(nlohmann::json::parse(config.getExpandedJSON()));
         CHECK(config.getBasePath() == basePath.lexically_normal());
@@ -582,6 +586,7 @@ TEST_CASE("SimulationConfig") {
                                                                "ex_extracellular_stimulation",
                                                                "ex_hyperpolarizing",
                                                                "ex_linear",
+                                                               "ex_linear_compartment_set",
                                                                "ex_noise_mean",
                                                                "ex_noise_meanpercent",
                                                                "ex_OU",
@@ -1024,6 +1029,91 @@ TEST_CASE("SimulationConfig") {
             })";
             CHECK_THROWS_AS(SimulationConfig(contents, "./"), SonataError);
         }
+        {  // The "compartments" key is not allowed in a report of type compartment_set
+            auto contents = R"({
+              "run": {
+                "dt": 0.05,
+                "tstop": 1000,
+                "random_seed": 0
+              },
+              "reports": {
+                "test": {
+                   "compartment_set": "cs0",
+                   "cells": "nodesetstring",
+                   "compartments": "center",
+                   "type": "compartment_set",
+                   "variable_name": "variablestring",
+                   "dt": 0.05,
+                   "start_time": 0,
+                   "end_time": 500
+                }
+              }
+            })";
+            CHECK_THROWS_AS(SimulationConfig(contents, "./"), SonataError);
+        }
+        {  // The "sections" key is not allowed in a report of type compartment_set
+            auto contents = R"({
+              "run": {
+                "dt": 0.05,
+                "tstop": 1000,
+                "random_seed": 0
+              },
+              "reports": {
+                "test": {
+                   "compartment_set": "cs0",
+                   "cells": "nodesetstring",
+                   "sections": "soma",
+                   "type": "compartment_set",
+                   "variable_name": "variablestring",
+                   "dt": 0.05,
+                   "start_time": 0,
+                   "end_time": 500
+                }
+              }
+            })";
+            CHECK_THROWS_AS(SimulationConfig(contents, "./"), SonataError);
+        }
+        {  // The "compartment_set" key is necessary in a report of type compartment_set
+            auto contents = R"({
+              "run": {
+                "dt": 0.05,
+                "tstop": 1000,
+                "random_seed": 0
+              },
+              "reports": {
+                "test": {
+                   "cells": "nodesetstring",
+                   "type": "compartment_set",
+                   "variable_name": "variablestring",
+                   "dt": 0.05,
+                   "start_time": 0,
+                   "end_time": 500
+                }
+              }
+            })";
+            CHECK_THROWS_AS(SimulationConfig(contents, "./"), SonataError);
+        }
+        {  // The "compartment_set" key is not allowed when the report is not of type compartment_set
+            auto contents = R"({
+              "run": {
+                "dt": 0.05,
+                "tstop": 1000,
+                "random_seed": 0
+              },
+              "reports": {
+                "test": {
+                   "compartment_set": "cs0",
+                   "cells": "nodesetstring",
+                   "type": "compartment",
+                   "variable_name": "variablestring",
+                   "dt": 0.05,
+                   "start_time": 0,
+                   "end_time": 500
+                }
+              }
+            })";
+            CHECK_THROWS_AS(SimulationConfig(contents, "./"), SonataError);
+        }
         {  // Invalid compartments in a report object
             auto contents = R"({
               "run": {
@@ -1034,7 +1124,7 @@ TEST_CASE("SimulationConfig") {
                 "test": {
                    "cells": "nodesetstring",
                    "compartments": "middle",
-                   "type": "compartment",
+                   "type": "compartment_set",
                    "variable_name": "variablestring",
                    "dt": 0.05,
                    "start_time": 0,
@@ -1112,15 +1202,66 @@ TEST_CASE("SimulationConfig") {
               },
               "inputs": {
                 "linear": {
-                   "input_type": "current_clamp",
-                   "module": "spike_replay",
-                   "delay": 0,
-                   "duration": 15,
-                   "node_set":"Column"
+                    "input_type": "current_clamp",
+                    "module": "linear",
+                    "delay": 0,
+                    "duration": 15,
+                    "node_set":"Column"
                 }
               }
             })";
-            CHECK_THROWS_AS(SimulationConfig(contents, "./"), SonataError);
+            CHECK_THROWS_WITH(
+                SimulationConfig(contents, "./"),
+                Catch::Matchers::Contains("amp_start")
+            );
+        }                                                      
+        {  // Both node_set and compartment_set are given in an input object
+            auto contents = R"({
+              "run": {
+                "random_seed": 12345,
+                "dt": 0.05,
+                "tstop": 1000
+              },
+              "inputs": {
+                "linear": {
+                    "input_type": "current_clamp",
+                    "module": "linear",
+                    "delay": 0,
+                    "duration": 15,
+                    "amp_start": 1,
+                    "node_set":"Column",
+                    "compartment_set":"cs1"
+                }
+              }
+            })";
+            CHECK_THROWS_WITH(
+                SimulationConfig(contents, "./"),
+                Catch::Matchers::Contains("node_set") &&
+                Catch::Matchers::Contains("compartment_set")
+            );
+        }
+        {  // Both node_set and compartment_set are missing in an input object
+            auto contents = R"({
+              "run": {
+                "random_seed": 12345,
+                "dt": 0.05,
+                "tstop": 1000
+              },
+              "inputs": {
+                "linear": {
+                    "input_type": "current_clamp",
+                    "module": "linear",
+                    "delay": 0,
+                    "duration": 15,
+                    "amp_start": 1
+                }
+              }
+            })";
+            CHECK_THROWS_WITH(
+                SimulationConfig(contents, "./"),
+                Catch::Matchers::Contains("node_set") &&
+                Catch::Matchers::Contains("compartment_set")
+            );
         }
         {  // Both mean and mean_percent are given in a noise input object
             auto contents = R"({

@@ -446,7 +446,7 @@ class TestSimulationConfig(unittest.TestCase):
         self.assertEqual(modifications["no_SK_E2"].section_configure, "%s.gSK_E2bar_SK_E2 = 0")
 
         self.assertEqual(self.config.list_report_names,
-                         { "axonal_comp_centers", "cell_imembrane", "compartment", "soma", "lfp" })
+                         { "axonal_comp_centers", "cell_imembrane", "compartment", "soma", "lfp", "compartment_set_v" })
 
         Report = SimulationConfig.Report
         self.assertEqual(self.config.report('soma').cells, 'Column')
@@ -468,19 +468,25 @@ class TestSimulationConfig(unittest.TestCase):
         self.assertEqual(self.config.report('cell_imembrane').type.name, 'summation')
         self.assertEqual(self.config.report('cell_imembrane').variable_name, 'i_membrane, IClamp')
         self.assertEqual(self.config.report('lfp').type, Report.Type.lfp)
+        self.assertEqual(self.config.report('compartment_set_v').type, Report.Type.compartment_set)
+        self.assertEqual(self.config.report('compartment_set_v').sections, Report.Sections.invalid)
+        self.assertEqual(self.config.report('compartment_set_v').compartments, Report.Compartments.invalid)
+        self.assertEqual(self.config.report('compartment_set_v').compartment_set, "cs0")
 
         self.assertEqual(self.config.network,
                          os.path.abspath(os.path.join(PATH, 'config/circuit_config.json')))
-        self.assertEqual(self.config.target_simulator.name, 'CORENEURON');
-        circuit_conf = CircuitConfig.from_file(self.config.network);
-        self.assertEqual(self.config.node_sets_file, circuit_conf.node_sets_path);
-        self.assertEqual(self.config.node_set, 'Column');
+        self.assertEqual(self.config.target_simulator.name, 'CORENEURON')
+        circuit_conf = CircuitConfig.from_file(self.config.network)
+        self.assertEqual(self.config.node_sets_file, circuit_conf.node_sets_path)
+        self.assertEqual(self.config.compartment_sets_file, os.path.abspath(os.path.join(PATH, 'config/compartment_sets.json')))
+        self.assertEqual(self.config.node_set, 'Column')
 
         self.assertEqual(self.config.list_input_names,
                          {"ex_abs_shotnoise",
                           "ex_extracellular_stimulation",
                           "ex_hyperpolarizing",
                           "ex_linear",
+                          "ex_linear_compartment_set",
                           "ex_noise_mean",
                           "ex_noise_meanpercent",
                           "ex_OU",
@@ -501,8 +507,12 @@ class TestSimulationConfig(unittest.TestCase):
         self.assertEqual(self.config.input('ex_linear').delay, 0)
         self.assertEqual(self.config.input('ex_linear').duration, 15)
         self.assertEqual(self.config.input('ex_linear').node_set, "Column")
+        self.assertEqual(self.config.input('ex_linear').compartment_set, None)
         self.assertEqual(self.config.input('ex_linear').amp_start, 0.15)
         self.assertEqual(self.config.input('ex_linear').amp_end, 0.15)
+
+        self.assertEqual(self.config.input('ex_linear_compartment_set').node_set, None)
+        self.assertEqual(self.config.input('ex_linear_compartment_set').compartment_set, "cs1")
 
         self.assertEqual(self.config.input('ex_rel_linear').input_type.name, 'current_clamp')
         self.assertEqual(self.config.input('ex_rel_linear').module.name, 'relative_linear')
@@ -718,3 +728,43 @@ class TestSimulationConfig(unittest.TestCase):
             """
             SimulationConfig(contents, "./")
         self.assertEqual(e.exception.args, ('Replay spike_file should be a SONATA h5 file', ))
+
+        with self.assertRaises(SonataError) as e:
+            contents = """
+            {
+                "run": { "random_seed": 12345, "dt": 0.05, "tstop": 1000 },
+                "inputs" : {
+                    "ex_linear": {
+                        "input_type": "current_clamp",
+                        "module": "linear",
+                        "amp_start": 0.15,
+                        "delay": 0,
+                        "duration": 15,
+                        "node_set":"Column",
+                        "compartment_set":"cs1"
+                    }
+                }
+            }
+            """
+            SimulationConfig(contents, "./")
+        self.assertEqual(e.exception.args, ('`node_set` is not allowed if `compartment_set` is set in input ex_linear', ))
+
+        with self.assertRaises(SonataError) as e:
+            contents = """
+            {
+                "run": { "random_seed": 12345, "dt": 0.05, "tstop": 1000 },
+                "inputs" : {
+                    "ex_linear": {
+                        "input_type": "current_clamp",
+                        "module": "linear",
+                        "amp_start": 0.15,
+                        "delay": 0,
+                        "duration": 15
+                    }
+                }
+            }
+            """
+            SimulationConfig(contents, "./")
+        self.assertEqual(e.exception.args, ('One of `node_set` or `compartment_set` need to have a value in input ex_linear', ))
+
+

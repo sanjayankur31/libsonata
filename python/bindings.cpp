@@ -6,6 +6,7 @@
 #include <bbp/sonata/config.h>
 #include <bbp/sonata/edges.h>
 #include <bbp/sonata/node_sets.h>
+#include <bbp/sonata/compartment_sets.h>
 #include <bbp/sonata/nodes.h>
 #include <bbp/sonata/optional.hpp>  //nonstd::optional
 #include <bbp/sonata/report_reader.h>
@@ -126,6 +127,9 @@ py::object getDynamicsAttributeVectorWithDefault(const Population& obj,
 
 // create a macro to reduce repetition for docstrings
 #define DOC_NODESETS(x) DOC(bbp, sonata, NodeSets, x)
+#define DOC_COMPARTMENTLOCATION(x) DOC(bbp, sonata, CompartmentLocation, x)
+#define DOC_COMPARTMENTSET(x) DOC(bbp, sonata, CompartmentSet, x)
+#define DOC_COMPARTMENTSETS(x) DOC(bbp, sonata, CompartmentSets, x)
 #define DOC_SEL(x) DOC(bbp, sonata, Selection, x)
 #define DOC_POP(x) DOC(bbp, sonata, Population, x)
 #define DOC_POP_NODE(x) DOC(bbp, sonata, NodePopulation, x)
@@ -178,7 +182,12 @@ py::class_<Population, std::shared_ptr<Population>> bindPopulationClass(py::modu
         return fmt::format(msg, fmt::arg("element", Population::ELEMENT));
     };
     return py::class_<Population, std::shared_ptr<Population>>(m, clsName, docString)
-        .def(py::init<const std::string&, const std::string&, const std::string&>())
+        .def(py::init([](py::object h5_filepath, py::object csv_filepath, std::string name) {
+                 return Population(py::str(h5_filepath), py::str(csv_filepath), name);
+             }),
+             "h5_filepath"_a,
+             "csv_filepath"_a,
+             "name"_a)
         .def_property_readonly("name", &Population::name, DOC_POP(name))
         .def_property_readonly("size", &Population::size, imbueElementName(DOC_POP(size)).c_str())
         .def_property_readonly("attribute_names",
@@ -326,13 +335,16 @@ py::class_<Storage> bindStorageClass(py::module& m, const char* clsName, const c
 namespace pybind11 {
 namespace detail {
 template <typename T>
-struct type_caster<nonstd::optional<T>>: optional_caster<nonstd::optional<T>> {};
+struct type_caster<nonstd::optional<T>>: optional_caster<nonstd::optional<T>> {
+};
 
 template <>
-struct type_caster<nonstd::nullopt_t>: public void_caster<nonstd::nullopt_t> {};
+struct type_caster<nonstd::nullopt_t>: public void_caster<nonstd::nullopt_t> {
+};
 
 template <typename... Ts>
-struct type_caster<nonstd::variant<Ts...>>: variant_caster<nonstd::variant<Ts...>> {};
+struct type_caster<nonstd::variant<Ts...>>: variant_caster<nonstd::variant<Ts...>> {
+};
 }  // namespace detail
 }  // namespace pybind11
 
@@ -345,17 +357,19 @@ void bindReportReader(py::module& m, const std::string& prefix) {
         // .ids, .data and .time members are owned by the c++ object. We can't do std::move.
         // To avoid copies, we must declare the owner of the data as the current Python
         // object. Numpy will adjust owner reference count according to returned arrays
-        .def_property_readonly("ids", [](const DataFrame<KeyType>& dframe) {
-            std::array<ssize_t, 1> dims { ssize_t(dframe.ids.size()) };
-            return managedMemoryArray(dframe.ids.data(), dims, dframe);
-        })
-        .def_property_readonly("data", [](const DataFrame<KeyType>& dframe) {
-            std::array<ssize_t, 2> dims {0l, ssize_t(dframe.ids.size())};
-            if (dims[1] > 0) {
-                dims[0] = dframe.data.size() / dims[1];
-            }
-            return managedMemoryArray(dframe.data.data(), dims, dframe);
-        })
+        .def_property_readonly("ids",
+                               [](const DataFrame<KeyType>& dframe) {
+                                   std::array<ssize_t, 1> dims{ssize_t(dframe.ids.size())};
+                                   return managedMemoryArray(dframe.ids.data(), dims, dframe);
+                               })
+        .def_property_readonly("data",
+                               [](const DataFrame<KeyType>& dframe) {
+                                   std::array<ssize_t, 2> dims{0l, ssize_t(dframe.ids.size())};
+                                   if (dims[1] > 0) {
+                                       dims[0] = dframe.data.size() / dims[1];
+                                   }
+                                   return managedMemoryArray(dframe.data.data(), dims, dframe);
+                               })
         .def_property_readonly("times", [](DataFrame<KeyType>& dframe) {
             return managedMemoryArray(dframe.times.data(), dframe.times.size(), dframe);
         });
@@ -467,6 +481,10 @@ PYBIND11_MODULE(_libsonata, m) {
             "flatten", [](Selection& obj) { return asArray(obj.flatten()); }, DOC_SEL(flatten))
         .def_property_readonly("flat_size", &Selection::flatSize, DOC_SEL(flatSize))
         .def(
+            "__contains__",
+            [](const Selection& sel, uint64_t node_id) { return sel.contains(node_id); },
+            DOC_SEL(nodeId))
+        .def(
             "__bool__",
             [](const Selection& obj) { return !obj.empty(); },
             "True if Selection is not empty")
@@ -528,12 +546,139 @@ PYBIND11_MODULE(_libsonata, m) {
     bindStorageClass<NodeStorage>(m, "NodeStorage", "NodePopulation");
 
     py::class_<NodeSets>(m, "NodeSets", "NodeSets")
-        .def(py::init<const std::string&>())
-        .def_static("from_file", [](py::object path) { return NodeSets::fromFile(py::str(path)); })
+        .def(py::init<const std::string&>(), "string of NodeSets JSON"_a)
+        .def_static(
+            "from_file",
+            [](py::object path) { return NodeSets::fromFile(py::str(path)); },
+            "path"_a)
         .def_property_readonly("names", &NodeSets::names, DOC_NODESETS(names))
         .def("materialize", &NodeSets::materialize, DOC_NODESETS(materialize))
         .def("update", &NodeSets::update, "other"_a, DOC_NODESETS(update))
         .def("toJSON", &NodeSets::toJSON, DOC_NODESETS(toJSON));
+
+    py::class_<CompartmentLocation>(m, "CompartmentLocation")
+        .def("__eq__", &CompartmentLocation::operator==)
+        .def("__ne__", &CompartmentLocation::operator!=)
+        .def("__lt__", &CompartmentLocation::operator<)
+        .def("__le__", &CompartmentLocation::operator<=)
+        .def("__gt__", &CompartmentLocation::operator>)
+        .def("__ge__", &CompartmentLocation::operator>=)
+        .def("__repr__",
+             [](const CompartmentLocation& self) {
+                 return fmt::format("CompartmentLocation({}, {}, {})",
+                                    self.nodeId,
+                                    self.sectionId,
+                                    self.offset);
+             })
+        .def("__str__",
+             [](const CompartmentLocation& self) { return py::str(py::repr(py::cast(self))); })
+        .def_readonly("node_id", &CompartmentLocation::nodeId, DOC_COMPARTMENTLOCATION(nodeId))
+        .def_readonly("section_id",
+                      &CompartmentLocation::sectionId,
+                      DOC_COMPARTMENTLOCATION(sectionId))
+        .def_readonly("offset", &CompartmentLocation::offset, DOC_COMPARTMENTLOCATION(offset));
+
+    py::class_<CompartmentSet>(m, "CompartmentSet")
+        .def(py::init<const std::string&>(), "string of CompartmentSet JSON"_a)
+        .def_property_readonly("population",
+                               &CompartmentSet::population,
+                               DOC_COMPARTMENTSET(population))
+        .def("size",
+             py::overload_cast<const bbp::sonata::Selection&>(&CompartmentSet::size, py::const_),
+             py::arg("selection") = bbp::sonata::Selection({}),
+             DOC_COMPARTMENTSET(size))
+        .def("node_ids", &CompartmentSet::nodeIds, DOC_COMPARTMENTSET(nodeIds))
+        .def("filter",
+             &CompartmentSet::filter,
+             py::arg("selection") = bbp::sonata::Selection({}),
+             DOC_COMPARTMENTSET(filter))
+        .def(
+            "filtered_iter",
+            [](const CompartmentSet& self, const bbp::sonata::Selection& sel) {
+                auto range = self.filtered_crange(sel);
+                return py::make_iterator(range.first, range.second);
+            },
+            py::arg("selection") = bbp::sonata::Selection({}),
+            py::keep_alive<0, 1>(),
+            DOC_COMPARTMENTSET(filteredIter))
+        .def("__len__", [](const CompartmentSet& self) { return self.size(); })
+        .def(
+            "__getitem__",
+            [](const CompartmentSet& self, py::ssize_t i) {
+                if (i < 0) {
+                    i += static_cast<py::ssize_t>(self.size());
+                }
+                if (i < 0 || static_cast<std::size_t>(i) >= self.size()) {
+                    throw py::index_error("Index out of range");
+                }
+                return self[static_cast<std::size_t>(i)];
+            },
+            py::arg("index"),
+            DOC_COMPARTMENTSET(getitem))
+        .def(
+            "__iter__",
+            [](const CompartmentSet& self) {
+                auto range = self.filtered_crange(bbp::sonata::Selection({}));
+                return py::make_iterator(range.first, range.second);
+            },
+            py::keep_alive<0, 1>())
+        .def("__eq__",
+             [](const CompartmentSet& self, const CompartmentSet& other) { return self == other; })
+        .def("__ne__",
+             [](const CompartmentSet& self, const CompartmentSet& other) { return self != other; })
+        .def("toJSON", &CompartmentSet::toJSON, DOC_COMPARTMENTSET(toJSON))
+        .def("__repr__",
+             [](const CompartmentSet& self) {
+                 auto range = self.filtered_crange(bbp::sonata::Selection({}));
+                 std::vector<py::object> parts;
+                 for (auto it = range.first; it != range.second; ++it) {
+                     parts.push_back(py::repr(py::cast(*it)));
+                 }
+                 auto joined = py::str(", ").attr("join")(parts);
+                 return "CompartmentSet(population=" +
+                        py::repr(py::cast(self.population())).cast<std::string>() +
+                        ", compartments=[" + joined.cast<std::string>() + "])";
+             })
+        .def("__str__",
+             [](const CompartmentSet& self) { return py::str(py::repr(py::cast(self))); });
+
+    py::class_<CompartmentSets>(m, "CompartmentSets")
+        .def(py::init<const std::string&>(), "string of CompartmentSets JSON"_a)
+        .def_static(
+            "from_file",
+            [](py::object path) { return CompartmentSets::fromFile(py::str(path)); },
+            "path"_a)
+        .def("__contains__",
+             &CompartmentSets::contains,
+             py::arg("key"),
+             DOC_COMPARTMENTSETS(contains))
+        .def("names", &CompartmentSets::names)
+        .def("values", &CompartmentSets::getAllCompartmentSets)
+        .def("items", &CompartmentSets::items)
+        .def("toJSON", &CompartmentSets::toJSON, DOC_COMPARTMENTSETS(toJSON))
+        .def("__eq__", &CompartmentSets::operator==)
+        .def("__ne__", &CompartmentSets::operator!=)
+        .def("__len__", &CompartmentSets::size)
+        .def("__getitem__",
+             &CompartmentSets::getCompartmentSet,
+             py::arg("key"),
+             DOC_COMPARTMENTSET(getitem))
+        .def("__repr__",
+             [](const CompartmentSets& self) {
+                 auto items = self.items();
+                 std::vector<py::object> parts;
+                 for (const auto& item : items) {
+                     // Build "key: value" strings
+                     auto key_repr = py::repr(py::cast(item.first));
+                     auto val_repr = py::repr(py::cast(item.second));
+                     parts.push_back(key_repr.attr("__str__")() + py::str(": ") +
+                                     val_repr.attr("__str__")());
+                 }
+                 auto joined = py::str(", ").attr("join")(parts);
+                 return "CompartmentSets({" + joined.cast<std::string>() + "})";
+             })
+        .def("__str__",
+             [](const CompartmentSets& self) { return py::str(py::repr(py::cast(self))); });
 
     py::class_<CommonPopulationProperties>(m,
                                            "CommonPopulationProperties",
@@ -590,7 +735,9 @@ PYBIND11_MODULE(_libsonata, m) {
         .value("partial", CircuitConfig::ConfigStatus::partial);
 
     py::class_<CircuitConfig>(m, "CircuitConfig", "Circuit Configuration")
-        .def(py::init<const std::string&, const std::string&>())
+        .def(py::init<const std::string&, const std::string&>(),
+             "string of CircuitConfig JSON"_a,
+             "base_path"_a)
         .def_static("from_file",
                     [](py::object path) { return CircuitConfig::fromFile(py::str(path)); })
         .def_property_readonly("config_status", &CircuitConfig::getCircuitConfigStatus, "ibid")
@@ -739,6 +886,9 @@ PYBIND11_MODULE(_libsonata, m) {
         .def_readonly("cells",
                       &SimulationConfig::Report::cells,
                       DOC_SIMULATIONCONFIG(Report, cells))
+        .def_readonly("compartment_set",
+                      &SimulationConfig::Report::compartment_set,
+                      DOC_SIMULATIONCONFIG(Report, compartmentSet))
         .def_readonly("sections",
                       &SimulationConfig::Report::sections,
                       DOC_SIMULATIONCONFIG(Report, sections))
@@ -768,6 +918,7 @@ PYBIND11_MODULE(_libsonata, m) {
                       DOC_SIMULATIONCONFIG(Report, enabled));
 
     py::enum_<SimulationConfig::Report::Sections>(report, "Sections")
+        .value("invalid", SimulationConfig::Report::Sections::invalid)
         .value("soma",
                SimulationConfig::Report::Sections::soma,
                DOC_SIMULATIONCONFIG(Report, Sections, soma))
@@ -788,13 +939,15 @@ PYBIND11_MODULE(_libsonata, m) {
         .value("compartment", SimulationConfig::Report::Type::compartment)
         .value("lfp", SimulationConfig::Report::Type::lfp)
         .value("summation", SimulationConfig::Report::Type::summation)
-        .value("synapse", SimulationConfig::Report::Type::synapse);
+        .value("synapse", SimulationConfig::Report::Type::synapse)
+        .value("compartment_set", SimulationConfig::Report::Type::compartment_set);
 
     py::enum_<SimulationConfig::Report::Scaling>(report, "Scaling")
         .value("none", SimulationConfig::Report::Scaling::none)
         .value("area", SimulationConfig::Report::Scaling::area);
 
     py::enum_<SimulationConfig::Report::Compartments>(report, "Compartments")
+        .value("invalid", SimulationConfig::Report::Compartments::invalid)
         .value("center", SimulationConfig::Report::Compartments::center)
         .value("all", SimulationConfig::Report::Compartments::all);
 
@@ -814,7 +967,10 @@ PYBIND11_MODULE(_libsonata, m) {
                       DOC_SIMULATIONCONFIG(InputBase, duration))
         .def_readonly("node_set",
                       &SimulationConfig::InputBase::nodeSet,
-                      DOC_SIMULATIONCONFIG(InputBase, nodeSet));
+                      DOC_SIMULATIONCONFIG(InputBase, nodeSet))
+        .def_readonly("compartment_set",
+                      &SimulationConfig::InputBase::compartmentSet,
+                      DOC_SIMULATIONCONFIG(InputBase, compartmentSet));
 
     py::class_<SimulationConfig::InputLinear, SimulationConfig::InputBase>(simConf, "Linear")
         .def_readonly("amp_start",
@@ -1112,7 +1268,10 @@ PYBIND11_MODULE(_libsonata, m) {
                       &SimulationConfig::ConnectionOverride::neuromodulationStrength,
                       DOC_SIMULATIONCONFIG(ConnectionOverride, neuromodulationStrength));
 
-    simConf.def(py::init<const std::string&, const std::string&>())
+    simConf
+        .def(py::init<const std::string&, const std::string&>(),
+             "string of SimulationConfig JSON"_a,
+             "base_path"_a)
         .def_static(
             "from_file",
             [](py::object path) { return SimulationConfig::fromFile(py::str(path)); },
@@ -1139,6 +1298,9 @@ PYBIND11_MODULE(_libsonata, m) {
         .def_property_readonly("node_sets_file",
                                &SimulationConfig::getNodeSetsFile,
                                DOC_SIMULATIONCONFIG(getNodeSetsFile))
+        .def_property_readonly("compartment_sets_file",
+                               &SimulationConfig::getCompartmentSetsFile,
+                               DOC_SIMULATIONCONFIG(getCompartmentSetsFile))
         .def_property_readonly("node_set",
                                &SimulationConfig::getNodeSet,
                                DOC_SIMULATIONCONFIG(getNodeSet))

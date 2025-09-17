@@ -102,6 +102,32 @@ TEST_CASE("Selection", "[base]") {
         CHECK(Selection({{0, 10}}) == (even | odd));
     }
 
+    SECTION("contains") {
+        const auto sel = Selection({{2, 5}, {20, 21}, {10, 15}}); // unsorted ranges
+
+        // Inside ranges
+        CHECK(sel.contains(2));
+        CHECK(sel.contains(3));
+        CHECK(sel.contains(4));
+        CHECK(sel.contains(10));
+        CHECK(sel.contains(14));
+        CHECK(sel.contains(20));
+
+        // Outside ranges
+        CHECK_FALSE(sel.contains(1));
+        CHECK_FALSE(sel.contains(5));   // upper bound is exclusive
+        CHECK_FALSE(sel.contains(6));
+        CHECK_FALSE(sel.contains(9));
+        CHECK_FALSE(sel.contains(15));  // upper bound is exclusive
+        CHECK_FALSE(sel.contains(19));
+        CHECK_FALSE(sel.contains(21));  // upper bound is exclusive
+
+        // Edge case: empty selection
+        const auto empty = Selection({});
+        CHECK_FALSE(empty.contains(0));
+        CHECK_FALSE(empty.contains(100));
+    }
+
     /*  need a way to test un-exported stuff
     SECTION("_sortAndMerge") {
         const auto empty = Selection::Ranges({});

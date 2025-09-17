@@ -17,6 +17,10 @@ class SONATA_API Selection
     using Range = std::array<Value, 2>;
     using Ranges = std::vector<Range>;
 
+    /**
+     * Create Selection from a list of ranges
+     * @param ranges is a list of ranges constituting Selection
+     */
     Selection(Ranges ranges);
 
     template <typename Iterator>
@@ -39,6 +43,13 @@ class SONATA_API Selection
     size_t flatSize() const;
 
     bool empty() const;
+
+    /**
+     * Check if Selection contains a given node id
+     * @param node id to check
+     * @return true if Selection contains the node id, false otherwise
+     */
+    bool contains(Value node_id) const;
 
   private:
     Ranges ranges_;

@@ -1,5 +1,6 @@
 set(TESTS_SRC
   main.cpp
+  test_compartment_sets.cpp
   test_config.cpp
   test_edges.cpp
   test_node_sets.cpp
